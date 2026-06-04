@@ -13,6 +13,7 @@
 ## 功能
 
 - 跟随 Codex 桌宠移动
+- 从 Codex 宠物 `spritesheet.webp` 裁切不同情绪动作
 - 显示 Codex 当前剩余用量百分比
 - 根据剩余用量切换状态文案
 - 小胶囊设计，尽量不遮挡对话窗口
@@ -80,6 +81,18 @@ cd codex-pet-limits
 | 10-29% | 省用 |
 | 1-9% | 低电 |
 | 0% 或达到限制 | 休息 |
+
+## 情绪动作
+
+插件会从 `~/.codex/pets/sproutpal/spritesheet.webp` 中裁切不同动作帧：
+
+| 用量状态 | 小噜噜动作 |
+| --- | --- |
+| 满电 | 开心跳跃 |
+| 稳定 | 抱手待机 |
+| 省用 | 思考 |
+| 低电 | 难过 |
+| 休息 | 坐下休息 |
 
 ## 数据读取
 
@@ -158,6 +171,7 @@ It does not modify Codex.app, upload data, or control the pet animation itself. 
 ## Features
 
 - Follows the Codex desktop pet
+- Crops mood frames from the Codex pet `spritesheet.webp`
 - Shows current Codex usage remaining
 - Switches status text based on remaining usage
 - Compact capsule UI that avoids covering the conversation window

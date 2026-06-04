@@ -25,6 +25,10 @@ struct PetAnchor {
 
 final class OverlayView: NSView {
     var snapshot: LimitSnapshot?
+    private let spriteImage: NSImage? = {
+        let path = NSHomeDirectory() + "/.codex/pets/sproutpal/spritesheet.webp"
+        return NSImage(contentsOfFile: path)
+    }()
 
     override var isFlipped: Bool { true }
 
@@ -32,13 +36,14 @@ final class OverlayView: NSView {
         super.draw(dirtyRect)
 
         let bounds = self.bounds
-        let radius: CGFloat = 15
+        let radius: CGFloat = 22
 
         NSColor(calibratedWhite: 0.02, alpha: 0.62).setFill()
         Path.roundedRect(bounds, radius: radius).fill()
 
         guard let snapshot else {
-            drawText("噜噜 ...", x: 10, y: 7, size: 11, weight: .semibold, color: .white)
+            drawMoodSprite(row: 0, column: 4)
+            drawText("读取中", x: 52, y: 7, size: 11, weight: .semibold, color: .white)
             return
         }
 
@@ -47,16 +52,18 @@ final class OverlayView: NSView {
         let overall = min(fiveHour, week)
         let status = statusText(overall: overall, reached: snapshot.reached)
         let color = statusColor(overall: overall, reached: snapshot.reached)
+        let mood = moodFrame(overall: overall, reached: snapshot.reached)
 
-        drawText(status, x: 10, y: 3, size: 11, weight: .bold, color: color)
-        drawText("\(overall)%", x: bounds.width - 36, y: 3, size: 11, weight: .bold, color: .white)
+        drawMoodSprite(row: mood.row, column: mood.column)
+        drawText(status, x: 52, y: 5, size: 11, weight: .bold, color: color)
+        drawText("\(overall)%", x: bounds.width - 38, y: 5, size: 11, weight: .bold, color: .white)
         drawMiniBar(percent: overall, color: color)
     }
 
     private func drawMiniBar(percent: Int, color: NSColor) {
-        let barX: CGFloat = 10
-        let barY: CGFloat = 21
-        let barWidth: CGFloat = bounds.width - 20
+        let barX: CGFloat = 52
+        let barY: CGFloat = 27
+        let barWidth: CGFloat = bounds.width - 62
         let barHeight: CGFloat = 4
         let background = Path.roundedRect(CGRect(x: barX, y: barY, width: barWidth, height: barHeight), radius: 4.5)
         NSColor.white.withAlphaComponent(0.18).setFill()
@@ -66,6 +73,26 @@ final class OverlayView: NSView {
         let fill = Path.roundedRect(CGRect(x: barX, y: barY, width: fillWidth, height: barHeight), radius: 4.5)
         color.setFill()
         fill.fill()
+    }
+
+    private func drawMoodSprite(row: Int, column: Int) {
+        guard let spriteImage else {
+            return
+        }
+
+        let columns: CGFloat = 8
+        let rows: CGFloat = 9
+        let frameWidth = spriteImage.size.width / columns
+        let frameHeight = spriteImage.size.height / rows
+        let sourceY = spriteImage.size.height - CGFloat(row + 1) * frameHeight
+        let source = CGRect(
+            x: CGFloat(column) * frameWidth,
+            y: sourceY,
+            width: frameWidth,
+            height: frameHeight
+        )
+        let target = CGRect(x: 7, y: 3, width: 38, height: 38)
+        spriteImage.draw(in: target, from: source, operation: .sourceOver, fraction: 1.0)
     }
 
     private func drawText(_ text: String, x: CGFloat, y: CGFloat, size: CGFloat, weight: NSFont.Weight, color: NSColor) {
@@ -87,6 +114,14 @@ final class OverlayView: NSView {
         return "满电"
     }
 
+    private func moodFrame(overall: Int, reached: Bool) -> (row: Int, column: Int) {
+        if reached || overall <= 0 { return (5, 3) }
+        if overall < 10 { return (5, 4) }
+        if overall < 30 { return (8, 2) }
+        if overall < 60 { return (6, 0) }
+        return (4, 2)
+    }
+
     private func statusColor(overall: Int, reached: Bool) -> NSColor {
         if reached || overall <= 0 { return NSColor.systemRed }
         if overall < 10 { return NSColor.systemOrange }
@@ -104,12 +139,12 @@ enum Path {
 
 final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     private let panel = NSPanel(
-        contentRect: CGRect(x: 80, y: 720, width: 112, height: 30),
+        contentRect: CGRect(x: 80, y: 720, width: 150, height: 44),
         styleMask: [.borderless, .nonactivatingPanel],
         backing: .buffered,
         defer: false
     )
-    private let overlay = OverlayView(frame: CGRect(x: 0, y: 0, width: 112, height: 30))
+    private let overlay = OverlayView(frame: CGRect(x: 0, y: 0, width: 150, height: 44))
     private var positionTimer: Timer?
     private var limitsTimer: Timer?
 
@@ -153,8 +188,8 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     private func movePanel(to anchor: PetAnchor) {
         guard let screen = NSScreen.main else { return }
         let screenHeight = screen.frame.height
-        let width: CGFloat = 112
-        let height: CGFloat = 30
+        let width: CGFloat = 150
+        let height: CGFloat = 44
         let x = max(8, anchor.x + anchor.width / 2 - width / 2)
         let yFromTop = min(screenHeight - height - 8, anchor.y + anchor.height + 9)
         let cocoaY = max(8, screenHeight - yFromTop - height)
