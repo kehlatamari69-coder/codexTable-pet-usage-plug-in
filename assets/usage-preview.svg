@@ -1,0 +1,47 @@
+<svg width="960" height="540" viewBox="0 0 960 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Codex pet usage capsule preview</title>
+  <desc id="desc">A small usage capsule anchored below a Codex desktop pet.</desc>
+  <defs>
+    <linearGradient id="sea" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#bdeff2"/>
+      <stop offset="1" stop-color="#77c7b7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#093c3b" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+  <rect width="960" height="540" rx="28" fill="url(#sea)"/>
+  <path d="M0 360 C120 310 200 390 330 340 C470 285 575 365 710 315 C815 276 880 305 960 284 L960 540 L0 540 Z" fill="#6bb7aa" opacity="0.35"/>
+  <rect x="535" y="0" width="425" height="540" rx="32" fill="#e8fbfb" opacity="0.82"/>
+  <g opacity="0.62" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="32" font-weight="700" fill="#334">
+    <text x="595" y="112">Codex</text>
+    <text x="595" y="176">Projects</text>
+    <text x="595" y="240">Settings</text>
+  </g>
+  <g filter="url(#shadow)" transform="translate(260 92)">
+    <ellipse cx="160" cy="292" rx="96" ry="18" fill="#2b4a3d" opacity="0.2"/>
+    <path d="M122 77 C123 45 146 30 160 30 C174 30 197 45 198 77 Z" fill="#ffba23"/>
+    <rect x="135" y="12" width="50" height="34" rx="17" fill="#ffc64f"/>
+    <path d="M145 10 C150 0 160 -1 165 10" stroke="#5fb66b" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <path d="M62 145 C27 116 18 93 34 78 C53 61 82 93 91 132 Z" fill="#ffd648"/>
+    <path d="M258 145 C293 116 302 93 286 78 C267 61 238 93 229 132 Z" fill="#ffd648"/>
+    <path d="M54 152 C54 67 107 53 160 53 C213 53 266 67 266 152 C266 241 217 292 160 292 C103 292 54 241 54 152 Z" fill="#ffd642"/>
+    <path d="M77 205 C92 250 113 292 160 292 C207 292 228 250 243 205 L243 288 C205 319 115 319 77 288 Z" fill="#ff8e1d"/>
+    <circle cx="118" cy="136" r="18" fill="#fff"/>
+    <circle cx="202" cy="136" r="18" fill="#fff"/>
+    <circle cx="118" cy="136" r="10" fill="#1c4f9d"/>
+    <circle cx="202" cy="136" r="10" fill="#1c4f9d"/>
+    <circle cx="123" cy="130" r="4" fill="#fff"/>
+    <circle cx="207" cy="130" r="4" fill="#fff"/>
+    <path d="M131 183 C147 197 175 197 191 183" stroke="#8a5215" stroke-width="6" fill="none" stroke-linecap="round"/>
+  </g>
+  <g filter="url(#shadow)" transform="translate(330 416)">
+    <rect width="172" height="46" rx="23" fill="#10211f" opacity="0.72"/>
+    <text x="18" y="20" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="800" fill="#35db6b">满电</text>
+    <text x="118" y="20" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="800" fill="#fff">77%</text>
+    <rect x="18" y="31" width="136" height="6" rx="3" fill="#ffffff" opacity="0.18"/>
+    <rect x="18" y="31" width="105" height="6" rx="3" fill="#35db6b"/>
+  </g>
+  <text x="48" y="72" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="34" font-weight="800" fill="#17332f">codex桌宠用量插件</text>
+  <text x="48" y="112" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="600" fill="#315b55">Anchored usage capsule for Codex pets</text>
+</svg>

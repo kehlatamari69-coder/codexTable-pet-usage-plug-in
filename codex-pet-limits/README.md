@@ -4,6 +4,8 @@
 
 它会锚定并跟随 Codex 桌宠移动，读取 Codex 当前用量限制，然后用一个小胶囊显示状态和剩余百分比。插件不修改 Codex.app，也不上传任何数据。
 
+![codex桌宠用量插件预览](../assets/usage-preview.svg)
+
 ## 功能
 
 - 跟随 Codex 桌宠移动
@@ -24,6 +26,8 @@
 | 10-29% | 省用 |
 | 1-9% | 低电 |
 | 0% 或达到限制 | 休息 |
+
+![状态映射](../assets/status-capsules.svg)
 
 ## 安装要求
 
@@ -82,6 +86,8 @@ cd codex-pet-limits
 ```text
 ~/Library/LaunchAgents/com.yy.codex-pet-limits.plist
 ```
+
+![安装流程](../assets/setup-flow.svg)
 
 ## 读取的数据
 
@@ -145,3 +151,31 @@ rm -f "$HOME/Library/LaunchAgents/com.yy.codex-pet-limits.plist"
 ## 说明
 
 这个插件是一个轻量的本地辅助工具。它不会修改 Codex 的桌宠资源，也不会控制桌宠本体动画；它通过一个独立透明窗口显示用量状态。
+
+---
+
+# English Summary
+
+This is a tiny macOS overlay plugin for the Codex desktop pet. It follows the pet, reads local Codex rate limits, and displays a compact usage capsule.
+
+## Quick Start
+
+```sh
+cd codex-pet-limits
+./build.sh
+./start-overlay.sh
+```
+
+Stop:
+
+```sh
+./stop-overlay.sh
+```
+
+Enable launch at login:
+
+```sh
+./install-launch-agent.sh
+```
+
+The plugin only reads local Codex state and rate-limit data. It does not modify Codex.app and does not upload data.
