@@ -1,0 +1,4 @@
+codex-pet-limits/CodexPetLimitOverlay
+codex-pet-limits/*.pid
+codex-pet-limits/*.log
+.DS_Store
