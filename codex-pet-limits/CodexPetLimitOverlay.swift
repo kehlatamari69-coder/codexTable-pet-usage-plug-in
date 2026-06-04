@@ -23,6 +23,11 @@ struct PetAnchor {
     let height: CGFloat
 }
 
+struct PetState {
+    let isOpen: Bool
+    let anchor: PetAnchor?
+}
+
 final class OverlayView: NSView {
     var snapshot: LimitSnapshot?
     private let spriteImage: NSImage? = {
@@ -157,10 +162,8 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         panel.level = .screenSaver
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-        panel.orderFrontRegardless()
 
         refreshPosition()
-        refreshLimits()
 
         positionTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             self?.refreshPosition()
@@ -171,8 +174,16 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     }
 
     private func refreshPosition() {
-        if let anchor = readPetAnchor() {
-            movePanel(to: anchor)
+        let petState = readPetState()
+        guard petState.isOpen, let anchor = petState.anchor else {
+            panel.orderOut(nil)
+            return
+        }
+
+        movePanel(to: anchor)
+        if !panel.isVisible {
+            panel.orderFrontRegardless()
+            refreshLimits()
         }
     }
 
@@ -198,14 +209,23 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     }
 }
 
-func readPetAnchor() -> PetAnchor? {
+func readPetState() -> PetState {
     let url = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex/.codex-global-state.json")
     guard
         let data = try? Data(contentsOf: url),
         let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
         let state = root["electron-persisted-atom-state"] as? [String: Any]
     else {
-        return nil
+        return PetState(isOpen: false, anchor: nil)
+    }
+
+    let isOpen =
+        (root["electron-avatar-overlay-open"] as? Bool) ??
+        (state["electron-avatar-overlay-open"] as? Bool) ??
+        false
+
+    guard isOpen else {
+        return PetState(isOpen: false, anchor: nil)
     }
 
     let bounds =
@@ -222,15 +242,16 @@ func readPetAnchor() -> PetAnchor? {
         let overlayX = bounds["x"] as? Double,
         let overlayY = bounds["y"] as? Double
     else {
-        return nil
+        return PetState(isOpen: true, anchor: nil)
     }
 
-    return PetAnchor(
+    let anchor = PetAnchor(
         x: CGFloat(overlayX + left),
         y: CGFloat(overlayY + top),
         width: CGFloat(width),
         height: CGFloat(height)
     )
+    return PetState(isOpen: true, anchor: anchor)
 }
 
 func readRateLimits() -> LimitSnapshot? {

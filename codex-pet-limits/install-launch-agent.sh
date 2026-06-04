@@ -14,7 +14,7 @@ cat > "$PLIST" <<PLIST
   <string>com.yy.codex-pet-limits</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$DIR/start-overlay.sh</string>
+    <string>$DIR/CodexPetLimitOverlay</string>
   </array>
   <key>RunAtLoad</key>
   <true/>

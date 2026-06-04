@@ -9,6 +9,7 @@
 ## 功能
 
 - 跟随 Codex 桌宠移动
+- 跟随 Codex 桌宠显示和隐藏
 - 从 Codex 宠物 `spritesheet.webp` 裁切不同情绪动作
 - 显示 Codex 当前剩余用量百分比
 - 根据剩余用量切换状态文案
@@ -146,7 +147,7 @@ ps aux | grep CodexPetLimitOverlay
 
 ### 胶囊位置不合适
 
-当前胶囊锚定在桌宠脚边，位置刷新间隔是 `0.2` 秒。可以在 `CodexPetLimitOverlay.swift` 里调整 `movePanel(to:)` 的偏移量。
+当前胶囊锚定在桌宠脚边，位置刷新间隔是 `0.2` 秒。桌宠隐藏时胶囊也会隐藏。可以在 `CodexPetLimitOverlay.swift` 里调整 `movePanel(to:)` 的偏移量。
 
 ### 卸载
 

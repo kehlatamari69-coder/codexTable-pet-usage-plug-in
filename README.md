@@ -13,6 +13,7 @@
 ## 功能
 
 - 跟随 Codex 桌宠移动
+- 跟随 Codex 桌宠显示和隐藏
 - 从 Codex 宠物 `spritesheet.webp` 裁切不同情绪动作
 - 显示 Codex 当前剩余用量百分比
 - 根据剩余用量切换状态文案
@@ -171,6 +172,7 @@ It does not modify Codex.app, upload data, or control the pet animation itself. 
 ## Features
 
 - Follows the Codex desktop pet
+- Shows and hides together with the Codex desktop pet
 - Crops mood frames from the Codex pet `spritesheet.webp`
 - Shows current Codex usage remaining
 - Switches status text based on remaining usage
