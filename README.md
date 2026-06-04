@@ -73,7 +73,7 @@ cd codex-pet-limits
 
 ## 状态含义
 
-插件会读取 Codex 的用量窗口，并取较紧张的那个作为总状态。
+插件只读取 Codex 的 5 小时用量窗口，并以 5 小时剩余量作为总状态。
 
 | 剩余用量 | 显示状态 |
 | --- | --- |
@@ -228,7 +228,7 @@ Enable launch at login:
 
 ## Status Mapping
 
-The plugin reads Codex usage windows and displays the tightest active limit.
+The plugin reads the Codex 5-hour usage window and displays the remaining percentage for that window.
 
 | Remaining | Status |
 | --- | --- |

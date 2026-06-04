@@ -52,9 +52,7 @@ final class OverlayView: NSView {
             return
         }
 
-        let fiveHour = snapshot.primary?.remainingPercent ?? 0
-        let week = snapshot.secondary?.remainingPercent ?? 0
-        let overall = min(fiveHour, week)
+        let overall = snapshot.primary?.remainingPercent ?? 0
         let status = statusText(overall: overall, reached: snapshot.reached)
         let color = statusColor(overall: overall, reached: snapshot.reached)
         let mood = moodFrame(overall: overall, reached: snapshot.reached)
