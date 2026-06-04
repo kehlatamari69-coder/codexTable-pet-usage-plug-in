@@ -220,7 +220,7 @@ func readRateLimits() -> LimitSnapshot? {
     input.fileHandleForWriting.write(Data(initialize.utf8))
     Thread.sleep(forTimeInterval: 0.2)
     input.fileHandleForWriting.write(Data(request.utf8))
-    Thread.sleep(forTimeInterval: 1.5)
+    Thread.sleep(forTimeInterval: 6.0)
     input.fileHandleForWriting.closeFile()
 
     let data = output.fileHandleForReading.readDataToEndOfFile()
