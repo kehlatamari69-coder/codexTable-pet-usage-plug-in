@@ -84,14 +84,15 @@ final class OverlayView: NSView {
         let rows: CGFloat = 9
         let frameWidth = spriteImage.size.width / columns
         let frameHeight = spriteImage.size.height / rows
-        let sourceY = spriteImage.size.height - CGFloat(row + 1) * frameHeight
         let source = CGRect(
             x: CGFloat(column) * frameWidth,
-            y: sourceY,
+            y: CGFloat(row) * frameHeight,
             width: frameWidth,
             height: frameHeight
         )
-        let target = CGRect(x: 7, y: 3, width: 38, height: 38)
+        let maxHeight: CGFloat = 38
+        let targetWidth = maxHeight * (frameWidth / frameHeight)
+        let target = CGRect(x: 9, y: 3, width: targetWidth, height: maxHeight)
         spriteImage.draw(in: target, from: source, operation: .sourceOver, fraction: 1.0)
     }
 
@@ -115,8 +116,8 @@ final class OverlayView: NSView {
     }
 
     private func moodFrame(overall: Int, reached: Bool) -> (row: Int, column: Int) {
-        if reached || overall <= 0 { return (5, 3) }
-        if overall < 10 { return (5, 4) }
+        if reached || overall <= 0 { return (5, 0) }
+        if overall < 10 { return (5, 1) }
         if overall < 30 { return (8, 2) }
         if overall < 60 { return (6, 0) }
         return (4, 2)
