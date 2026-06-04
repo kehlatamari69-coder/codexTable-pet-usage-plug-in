@@ -84,9 +84,10 @@ final class OverlayView: NSView {
         let rows: CGFloat = 9
         let frameWidth = spriteImage.size.width / columns
         let frameHeight = spriteImage.size.height / rows
+        let sourceY = spriteImage.size.height - CGFloat(row + 1) * frameHeight
         let source = CGRect(
             x: CGFloat(column) * frameWidth,
-            y: CGFloat(row) * frameHeight,
+            y: sourceY,
             width: frameWidth,
             height: frameHeight
         )
