@@ -84,17 +84,16 @@ final class OverlayView: NSView {
         let rows: CGFloat = 9
         let frameWidth = spriteImage.size.width / columns
         let frameHeight = spriteImage.size.height / rows
-        let sourceY = spriteImage.size.height - CGFloat(row + 1) * frameHeight
         let source = CGRect(
             x: CGFloat(column) * frameWidth,
-            y: sourceY,
+            y: CGFloat(row) * frameHeight,
             width: frameWidth,
             height: frameHeight
         )
         let maxHeight: CGFloat = 38
         let targetWidth = maxHeight * (frameWidth / frameHeight)
         let target = CGRect(x: 9, y: 3, width: targetWidth, height: maxHeight)
-        spriteImage.draw(in: target, from: source, operation: .sourceOver, fraction: 1.0)
+        spriteImage.draw(in: target, from: source, operation: .sourceOver, fraction: 1.0, respectFlipped: true, hints: nil)
     }
 
     private func drawText(_ text: String, x: CGFloat, y: CGFloat, size: CGFloat, weight: NSFont.Weight, color: NSColor) {
