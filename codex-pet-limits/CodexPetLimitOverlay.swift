@@ -53,12 +53,13 @@ final class OverlayView: NSView {
         }
 
         let overall = snapshot.primary?.remainingPercent ?? 0
-        let status = statusText(overall: overall, reached: snapshot.reached)
+        let status = statusText(overall: overall, reached: snapshot.reached, resetsAt: snapshot.primary?.resetsAt)
         let color = statusColor(overall: overall, reached: snapshot.reached)
         let mood = moodFrame(overall: overall, reached: snapshot.reached)
 
         drawMoodSprite(row: mood.row, column: mood.column)
-        drawText(status, x: 52, y: 5, size: 11, weight: .bold, color: color)
+        let statusSize: CGFloat = (snapshot.reached || overall <= 0) ? 10 : 11
+        drawText(status, x: 52, y: 5, size: statusSize, weight: .bold, color: color)
         drawText("\(overall)%", x: bounds.width - 38, y: 5, size: 11, weight: .bold, color: .white)
         drawMiniBar(percent: overall, color: color)
     }
@@ -110,12 +111,34 @@ final class OverlayView: NSView {
         text.draw(in: CGRect(x: x, y: y, width: bounds.width - x - 10, height: 20), withAttributes: attributes)
     }
 
-    private func statusText(overall: Int, reached: Bool) -> String {
-        if reached || overall <= 0 { return "休息" }
+    private func statusText(overall: Int, reached: Bool, resetsAt: Int?) -> String {
+        if reached || overall <= 0 {
+            if let countdown = resetCountdownText(resetsAt: resetsAt) {
+                return countdown
+            }
+            return "休息"
+        }
         if overall < 10 { return "低电" }
         if overall < 30 { return "省用" }
         if overall < 60 { return "稳定" }
         return "满电"
+    }
+
+    private func resetCountdownText(resetsAt: Int?) -> String? {
+        guard let resetsAt else {
+            return nil
+        }
+
+        let seconds = max(0, resetsAt - Int(Date().timeIntervalSince1970))
+        if seconds <= 0 {
+            return "刷新中"
+        }
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        if hours > 0 {
+            return "\(hours)h\(minutes)m"
+        }
+        return "\(max(1, minutes))m"
     }
 
     private func moodFrame(overall: Int, reached: Bool) -> (row: Int, column: Int) {
@@ -167,6 +190,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
             self?.refreshPosition()
         }
         limitsTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            self?.overlay.needsDisplay = true
             self?.refreshLimits()
         }
     }

@@ -81,7 +81,7 @@ cd codex-pet-limits
 | 30-59% | 稳定 |
 | 10-29% | 省用 |
 | 1-9% | 低电 |
-| 0% 或达到限制 | 休息 |
+| 0% 或达到限制 | 重置倒计时 |
 
 ## 情绪动作
 
@@ -93,7 +93,7 @@ cd codex-pet-limits
 | 稳定 | 抱手待机 |
 | 省用 | 思考 |
 | 低电 | 难过 |
-| 休息 | 难过休息 |
+| 0% / 限制 | 重置倒计时 + 难过休息 |
 
 ## 数据读取
 
@@ -236,7 +236,7 @@ The plugin reads the Codex 5-hour usage window and displays the remaining percen
 | 30-59% | 稳定 / Stable |
 | 10-29% | 省用 / Save |
 | 1-9% | 低电 / Low |
-| 0% or limited | 休息 / Rest |
+| 0% or limited | reset countdown |
 
 ## Local Data Access
 
