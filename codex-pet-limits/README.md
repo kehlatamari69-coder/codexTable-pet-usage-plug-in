@@ -1,42 +1,147 @@
-# Codex Pet Limits Overlay
+# codex桌宠用量插件
 
-A tiny macOS overlay that anchors to the Codex desktop pet and shows the current Codex usage remaining as a compact status capsule.
+一个 macOS 本地小插件，用来给 Codex 桌宠增加“剩余用量状态胶囊”。
 
-It follows the pet position, reads Codex rate limits locally, and updates the visual state without modifying Codex.app.
+它会锚定并跟随 Codex 桌宠移动，读取 Codex 当前用量限制，然后用一个小胶囊显示状态和剩余百分比。插件不修改 Codex.app，也不上传任何数据。
 
-## What It Reads
+## 功能
 
-- `~/.codex/.codex-global-state.json` for the current pet position
-- `codex app-server --stdio` with `account/rateLimits/read` for Codex rate limits
+- 跟随 Codex 桌宠移动
+- 显示 Codex 当前剩余用量百分比
+- 根据剩余用量切换状态文案
+- 胶囊尺寸小，不遮挡对话列表
+- 支持手动启动、停止
+- 支持登录 macOS 后自动启动
 
-## Status Mapping
+## 状态说明
 
-- 60-100% remaining: `满电`
-- 30-59% remaining: `稳定`
-- 10-29% remaining: `省用`
-- 1-9% remaining: `低电`
-- 0% or rate limit reached: `休息`
+插件会读取 Codex 的用量窗口，并取较紧张的那个作为总状态。
 
-## Install
+| 剩余用量 | 显示状态 |
+| --- | --- |
+| 60-100% | 满电 |
+| 30-59% | 稳定 |
+| 10-29% | 省用 |
+| 1-9% | 低电 |
+| 0% 或达到限制 | 休息 |
+
+## 安装要求
+
+- macOS
+- 已安装 Codex 桌面版
+- 系统有 Swift 编译工具，通常安装 Xcode Command Line Tools 后即可
+
+检查 Swift：
+
+```sh
+which swiftc
+```
+
+## 构建
+
+进入项目目录：
 
 ```sh
 cd codex-pet-limits
 ./build.sh
+```
+
+构建脚本会：
+
+- 使用 `swiftc` 编译 `CodexPetLimitOverlay.swift`
+- 对生成的本地程序做 ad-hoc 签名，避免 macOS 启动时拦截
+
+## 启动
+
+```sh
 ./start-overlay.sh
 ```
 
-## Stop
+启动后，Codex 桌宠附近会出现一个小胶囊，例如：
+
+```text
+满电 77%
+```
+
+胶囊会跟随桌宠移动。
+
+## 停止
 
 ```sh
 ./stop-overlay.sh
 ```
 
-## Launch At Login
+## 开机自启
 
 ```sh
 ./install-launch-agent.sh
 ```
 
-## Notes
+这会创建并加载：
 
-The overlay refreshes position every 0.2 seconds and refreshes Codex usage every 60 seconds. It is intentionally small so it does not cover the Codex conversation list.
+```text
+~/Library/LaunchAgents/com.yy.codex-pet-limits.plist
+```
+
+## 读取的数据
+
+插件只读取本机数据：
+
+- `~/.codex/.codex-global-state.json`
+
+用于获取 Codex 桌宠当前位置。
+
+- `codex app-server --stdio`
+- `account/rateLimits/read`
+
+用于读取 Codex 当前 rate limits。
+
+## 常见问题
+
+### 没显示胶囊
+
+先确认程序是否正在运行：
+
+```sh
+ps aux | grep CodexPetLimitOverlay
+```
+
+如果没运行，重新启动：
+
+```sh
+./start-overlay.sh
+```
+
+### 更新后打不开
+
+重新构建并签名：
+
+```sh
+./build.sh
+./start-overlay.sh
+```
+
+### 胶囊位置不合适
+
+当前胶囊锚定在桌宠脚边，位置刷新间隔是 `0.2` 秒。可以在 `CodexPetLimitOverlay.swift` 里调整 `movePanel(to:)` 的偏移量。
+
+### 卸载
+
+停止插件：
+
+```sh
+./stop-overlay.sh
+```
+
+删除开机自启：
+
+```sh
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.yy.codex-pet-limits.plist" 2>/dev/null || true
+rm -f "$HOME/Library/LaunchAgents/com.yy.codex-pet-limits.plist"
+```
+
+然后删除项目目录即可。
+
+## 说明
+
+这个插件是一个轻量的本地辅助工具。它不会修改 Codex 的桌宠资源，也不会控制桌宠本体动画；它通过一个独立透明窗口显示用量状态。
