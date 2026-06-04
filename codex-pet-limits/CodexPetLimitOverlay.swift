@@ -175,7 +175,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
 
     private func refreshPosition() {
         let petState = readPetState()
-        guard petState.isOpen, let anchor = petState.anchor else {
+        guard isCodexDesktopRunning(), petState.isOpen, let anchor = petState.anchor else {
             panel.orderOut(nil)
             return
         }
@@ -206,6 +206,13 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         let yFromTop = min(screenHeight - height - 8, anchor.y + anchor.height + 9)
         let cocoaY = max(8, screenHeight - yFromTop - height)
         panel.setFrame(CGRect(x: x, y: cocoaY, width: width, height: height), display: true)
+    }
+}
+
+func isCodexDesktopRunning() -> Bool {
+    NSWorkspace.shared.runningApplications.contains { app in
+        app.bundleURL?.path == "/Applications/Codex.app"
+            && app.activationPolicy == .regular
     }
 }
 
