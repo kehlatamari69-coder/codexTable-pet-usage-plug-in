@@ -109,6 +109,19 @@ cd codex-pet-limits
 
 用于读取 Codex 当前 rate limits。插件只在桌宠可见时保持一个本地连接，并且最多每 5 分钟刷新一次用量，避免反复启动 `app-server` 导致 Codex 本地日志膨胀。
 
+## 日志清理
+
+如果之前因为高频读取导致 `~/.codex/logs_2.sqlite` 变得很大，可以安装安全清理器：
+
+```sh
+cd codex-pet-limits
+./install-cleanup-agent.sh
+```
+
+清理器会在登录后、每小时、每天 04:20 运行一次。它只在 `logs_2.sqlite` 超过 200MB 时处理，并且如果 Codex 正在运行会自动跳过，等你退出 Codex 后再清理缓存日志。
+
+默认会删除旧的 Codex 日志缓存，避免换个目录继续占空间。它不会删除会话、配置、宠物资源或认证文件。需要保留日志备份时，可以运行前设置 `KEEP_ARCHIVES=1`。
+
 ## 常见问题
 
 ### 没显示胶囊
@@ -138,7 +151,7 @@ cd codex-pet-limits
 
 ### 胶囊位置不合适
 
-当前胶囊锚定在桌宠脚边，位置刷新间隔是 `0.2` 秒。可以在 `CodexPetLimitOverlay.swift` 里调整 `movePanel(to:)` 的偏移量。
+当前胶囊锚定在桌宠脚边，位置刷新间隔是 `0.5` 秒。可以在 `CodexPetLimitOverlay.swift` 里调整 `movePanel(to:)` 的偏移量。
 
 ### 卸载
 
@@ -252,6 +265,19 @@ Used to locate the current Codex pet position.
 - `account/rateLimits/read`
 
 Used to read Codex rate limits. While the pet is visible, the plugin keeps one local connection open and refreshes usage at most once every 5 minutes, avoiding repeated `app-server` launches and noisy local Codex logs.
+
+## Log Cleanup
+
+If an older version made `~/.codex/logs_2.sqlite` large, install the safe cleanup agent:
+
+```sh
+cd codex-pet-limits
+./install-cleanup-agent.sh
+```
+
+It runs at login, hourly, and every day at 04:20. It only acts when `logs_2.sqlite` is larger than 200MB. If Codex is running, it skips cleanup and waits for a later run.
+
+By default it removes old Codex log cache files instead of keeping large archives around. It does not remove sessions, settings, pet assets, or auth files. Set `KEEP_ARCHIVES=1` before running it if you want to keep one backup.
 
 ## More Details
 

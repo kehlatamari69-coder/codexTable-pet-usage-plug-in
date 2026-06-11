@@ -106,6 +106,8 @@ cd codex-pet-limits
 ~/Library/LaunchAgents/com.yy.codex-pet-limits.plist
 ```
 
+如果你只想手动启动胶囊，不需要运行这个命令。
+
 ![安装流程](../assets/setup-flow.svg)
 
 ## 读取的数据
@@ -120,6 +122,18 @@ cd codex-pet-limits
 - `account/rateLimits/read`
 
 用于读取 Codex 当前 rate limits。插件只在桌宠可见时保持一个本地连接，并且最多每 5 分钟刷新一次用量，避免反复启动 `app-server` 导致 Codex 本地日志膨胀。
+
+## 自动清理日志
+
+旧版本如果高频读取过用量，可能让 `~/.codex/logs_2.sqlite` 变得很大。可以安装安全清理器：
+
+```sh
+./install-cleanup-agent.sh
+```
+
+清理器会在登录后、每小时、每天 04:20 运行一次。它只在日志库超过 200MB 时处理，并且如果 Codex 正在运行会自动跳过，避免移动正在写入的 SQLite 文件。
+
+默认会删除旧的 Codex 日志缓存，避免换个目录继续占空间。它不会删除会话、配置、宠物资源或认证文件。需要保留日志备份时，可以运行前设置 `KEEP_ARCHIVES=1`。
 
 ## 常见问题
 
@@ -148,7 +162,7 @@ ps aux | grep CodexPetLimitOverlay
 
 ### 胶囊位置不合适
 
-当前胶囊锚定在桌宠脚边，位置刷新间隔是 `0.2` 秒。桌宠隐藏时胶囊也会隐藏。可以在 `CodexPetLimitOverlay.swift` 里调整 `movePanel(to:)` 的偏移量。
+当前胶囊锚定在桌宠脚边，位置刷新间隔是 `0.5` 秒。桌宠隐藏时胶囊也会隐藏。可以在 `CodexPetLimitOverlay.swift` 里调整 `movePanel(to:)` 的偏移量。
 
 ### 卸载
 
@@ -158,11 +172,10 @@ ps aux | grep CodexPetLimitOverlay
 ./stop-overlay.sh
 ```
 
-删除开机自启：
+删除开机自启和清理器：
 
 ```sh
-launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.yy.codex-pet-limits.plist" 2>/dev/null || true
-rm -f "$HOME/Library/LaunchAgents/com.yy.codex-pet-limits.plist"
+./uninstall-agents.sh
 ```
 
 然后删除项目目录即可。
@@ -173,7 +186,7 @@ rm -f "$HOME/Library/LaunchAgents/com.yy.codex-pet-limits.plist"
 
 ---
 
-# English Summary
+# English Guide
 
 This is a tiny macOS overlay plugin for the Codex desktop pet. It follows the pet, reads local Codex rate limits, and displays a compact usage capsule.
 
@@ -195,6 +208,22 @@ Enable launch at login:
 
 ```sh
 ./install-launch-agent.sh
+```
+
+Install the safe log cleanup agent:
+
+```sh
+./install-cleanup-agent.sh
+```
+
+The cleanup agent runs at login, hourly, and every day at 04:20. It only cleans `~/.codex/logs_2.sqlite` when it is larger than 200MB and Codex is not running.
+
+By default it removes old Codex log cache files instead of keeping large archives around. Set `KEEP_ARCHIVES=1` before running it if you want to keep one backup.
+
+Disable both agents:
+
+```sh
+./uninstall-agents.sh
 ```
 
 The plugin only reads local Codex state and rate-limit data. It does not modify Codex.app and does not upload data.

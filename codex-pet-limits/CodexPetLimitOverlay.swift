@@ -187,7 +187,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
 
         refreshPosition()
 
-        positionTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        positionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             self?.refreshPosition()
         }
         limitsTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
@@ -197,8 +197,14 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     }
 
     private func refreshPosition() {
+        guard isCodexDesktopRunning() else {
+            panel.orderOut(nil)
+            rateLimitClient.stop()
+            return
+        }
+
         let petState = readPetState()
-        guard isCodexDesktopRunning(), petState.isOpen, let anchor = petState.anchor else {
+        guard petState.isOpen, let anchor = petState.anchor else {
             panel.orderOut(nil)
             rateLimitClient.stop()
             return
