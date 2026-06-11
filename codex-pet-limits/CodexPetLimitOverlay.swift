@@ -195,6 +195,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     private let rateLimitClient = RateLimitClient()
     private var positionTimer: Timer?
     private var limitsTimer: Timer?
+    private var codexWaitTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -205,31 +206,94 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         panel.ignoresMouseEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
 
-        refreshPosition()
+        let notifications = NSWorkspace.shared.notificationCenter
+        notifications.addObserver(
+            self,
+            selector: #selector(workspaceApplicationChanged(_:)),
+            name: NSWorkspace.didLaunchApplicationNotification,
+            object: nil
+        )
+        notifications.addObserver(
+            self,
+            selector: #selector(workspaceApplicationChanged(_:)),
+            name: NSWorkspace.didTerminateApplicationNotification,
+            object: nil
+        )
 
-        positionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            self?.refreshPosition()
+        updateCodexLifecycle()
+    }
+
+    @objc private func workspaceApplicationChanged(_ notification: Notification) {
+        guard
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+            isCodexApplication(app)
+        else {
+            return
         }
-        limitsTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            self?.overlay.needsDisplay = true
-            self?.refreshLimits(force: self?.overlay.snapshot == nil)
+        updateCodexLifecycle()
+    }
+
+    private func updateCodexLifecycle() {
+        if isCodexDesktopRunning() {
+            stopCodexWaitTimer()
+            startActiveTimers()
+            refreshPosition()
+        } else {
+            stopActiveTimers()
+            startCodexWaitTimer()
+            hideAndClear()
         }
+    }
+
+    private func startActiveTimers() {
+        if positionTimer == nil {
+            positionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                self?.refreshPosition()
+            }
+        }
+        if limitsTimer == nil {
+            limitsTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+                self?.overlay.needsDisplay = true
+                self?.refreshLimits(force: self?.overlay.snapshot == nil)
+            }
+        }
+    }
+
+    private func stopActiveTimers() {
+        positionTimer?.invalidate()
+        positionTimer = nil
+        limitsTimer?.invalidate()
+        limitsTimer = nil
+    }
+
+    private func startCodexWaitTimer() {
+        guard codexWaitTimer == nil else { return }
+        codexWaitTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.updateCodexLifecycle()
+        }
+    }
+
+    private func stopCodexWaitTimer() {
+        codexWaitTimer?.invalidate()
+        codexWaitTimer = nil
+    }
+
+    private func hideAndClear() {
+        overlay.snapshot = nil
+        overlay.needsDisplay = true
+        panel.orderOut(nil)
+        rateLimitClient.stop()
     }
 
     private func refreshPosition() {
         guard isCodexDesktopRunning() else {
-            overlay.snapshot = nil
-            panel.orderOut(nil)
-            rateLimitClient.stop()
-            NSApp.terminate(nil)
+            updateCodexLifecycle()
             return
         }
 
         let petState = readPetState()
         guard petState.isOpen, let anchor = petState.anchor else {
-            overlay.snapshot = nil
-            panel.orderOut(nil)
-            rateLimitClient.stop()
+            hideAndClear()
             return
         }
 
@@ -409,11 +473,13 @@ final class RateLimitClient {
 }
 
 func isCodexDesktopRunning() -> Bool {
-    NSWorkspace.shared.runningApplications.contains { app in
-        app.bundleIdentifier == "com.openai.codex"
-            || app.localizedName == "Codex"
-            || app.bundleURL?.lastPathComponent == "Codex.app"
-    }
+    NSWorkspace.shared.runningApplications.contains(where: isCodexApplication)
+}
+
+func isCodexApplication(_ app: NSRunningApplication) -> Bool {
+    app.bundleIdentifier == "com.openai.codex"
+        || app.localizedName == "Codex"
+        || app.bundleURL?.lastPathComponent == "Codex.app"
 }
 
 func readPetState() -> PetState {

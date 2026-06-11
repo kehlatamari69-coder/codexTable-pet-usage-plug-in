@@ -6,78 +6,47 @@
 
 ## 中文说明
 
-`codex桌宠用量插件` 是一个 macOS 本地小工具。它会锚定在 Codex 桌宠附近，读取 Codex 当前剩余用量，并用一个小胶囊显示状态和百分比。
+`codex桌宠用量插件` 现在是一个轻量 macOS app：`CodexPetLimits.app`。它登录后自动启动，等待 Codex 打开；Codex 打开并显示桌宠时，它在桌宠附近显示用量胶囊；Codex 关闭或桌宠隐藏时，它会关闭用量连接并清空内存状态。
 
-它不会修改 Codex.app，不会上传数据，也不会控制桌宠本体动画。它只是通过一个独立透明窗口显示用量状态。
+它不修改 Codex.app，不上传数据，不保存旧用量数据，也不写插件日志。
 
 ## 功能
 
-- 跟随 Codex 桌宠移动
 - 跟随 Codex 软件启动和关闭
 - 跟随 Codex 桌宠显示、隐藏和移动
-- 从 Codex 宠物 `spritesheet.webp` 裁切不同情绪动作
 - 显示 Codex 当前 5 小时剩余用量百分比
 - 当一周剩余用量为 0 时，显示一周刷新倒计时
-- 根据剩余用量切换状态文案
-- 小胶囊设计，尽量不遮挡对话窗口
-- 关闭后清空内存状态，下次启动重新读取新数据
+- 关闭或隐藏后清空内存状态，下次启动重新读取新数据
 - 低频读取用量，避免频繁刷写 Codex 本地日志
-- 支持手动启动、停止
-- 支持登录 macOS 后自动启动
+- 单 app 自启动，没有 watcher/cleanup 旧脚本
 
-![状态映射](assets/status-capsules.svg)
-
-## 安装要求
-
-- macOS
-- 已安装 Codex 桌面版
-- 已安装 Swift 编译工具
-
-检查 Swift：
-
-```sh
-which swiftc
-```
-
-如果没有 `swiftc`，请先安装 Xcode Command Line Tools。
-
-## 使用方法
-
-进入插件目录：
+## 安装
 
 ```sh
 cd codex-pet-limits
+./install-app.sh
 ```
 
-构建插件：
+安装位置：
+
+```text
+~/Applications/CodexPetLimits.app
+```
+
+自启动项：
+
+```text
+~/Library/LaunchAgents/com.yy.codex-pet-limits.plist
+```
+
+## 卸载
 
 ```sh
-./build.sh
+cd codex-pet-limits
+./uninstall-app.sh
 ```
-
-启动插件：
-
-```sh
-./start-overlay.sh
-```
-
-停止插件：
-
-```sh
-./stop-overlay.sh
-```
-
-设置登录后自动启动：
-
-```sh
-./install-watcher-agent.sh
-```
-
-![安装流程](assets/setup-flow.svg)
 
 ## 状态含义
-
-插件显示 Codex 的 5 小时用量窗口，并以 5 小时剩余量作为总状态。它也会读取一周窗口；只有当一周剩余用量为 0 时，才切换为一周刷新倒计时。
 
 | 剩余用量 | 显示状态 |
 | --- | --- |
@@ -88,206 +57,42 @@ cd codex-pet-limits
 | 0% 或达到 5 小时限制 | 5 小时重置倒计时 |
 | 一周剩余 0% | 一周刷新倒计时 |
 
-## 情绪动作
-
-插件会从 `~/.codex/pets/sproutpal/spritesheet.webp` 中裁切不同动作帧：
-
-| 用量状态 | 小噜噜动作 |
-| --- | --- |
-| 满电 | 开心跳跃 |
-| 稳定 | 抱手待机 |
-| 省用 | 思考 |
-| 低电 | 难过 |
-| 0% / 限制 | 重置倒计时 + 难过休息 |
-
 ## 数据读取
 
 插件只读取本机数据：
 
-- `~/.codex/.codex-global-state.json`
+- `~/.codex/.codex-global-state.json`：获取 Codex 桌宠位置
+- `codex app-server --stdio` + `account/rateLimits/read`：读取当前 rate limits
 
-用于获取 Codex 桌宠当前位置。
-
-- `codex app-server --stdio`
-- `account/rateLimits/read`
-
-用于读取 Codex 当前 rate limits。插件只在 Codex 和桌宠可见时保持一个本地连接，并且最多每 5 分钟刷新一次用量，避免反复启动 `app-server` 导致 Codex 本地日志膨胀。关闭 Codex 或隐藏胶囊后，插件会清空内存中的用量状态，不保存旧数据。
-
-## 日志清理
-
-如果之前因为高频读取导致 `~/.codex/logs_2.sqlite` 变得很大，可以安装安全清理器：
-
-```sh
-cd codex-pet-limits
-./install-cleanup-agent.sh
-```
-
-清理器会在登录后、每 5 分钟、每天 04:20 运行一次。它只在 `logs_2.sqlite` 超过 200MB 时处理，并且如果 Codex 正在运行会自动跳过，等你退出 Codex 后再清理缓存日志。
-
-默认会删除旧的 Codex 日志缓存，避免换个目录继续占空间。它不会删除会话、配置、宠物资源或认证文件。需要保留日志备份时，可以运行前设置 `KEEP_ARCHIVES=1`。
-
-清理器默认静默运行，输出会写到 `/dev/null`，不会额外生成自己的日志文件。
-
-## 常见问题
-
-### 没显示胶囊
-
-确认程序是否正在运行：
-
-```sh
-ps aux | grep CodexPetLimitOverlay
-```
-
-如果没运行，重新启动：
-
-```sh
-cd codex-pet-limits
-./start-overlay.sh
-```
-
-### 更新后打不开
-
-重新构建并签名：
-
-```sh
-cd codex-pet-limits
-./build.sh
-./start-overlay.sh
-```
-
-### 胶囊位置不合适
-
-当前胶囊锚定在桌宠脚边，位置刷新间隔是 `0.5` 秒。可以在 `CodexPetLimitOverlay.swift` 里调整 `movePanel(to:)` 的偏移量。
-
-### 卸载
-
-停止插件：
-
-```sh
-cd codex-pet-limits
-./stop-overlay.sh
-```
-
-删除开机自启：
-
-```sh
-launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.yy.codex-pet-limits.plist" 2>/dev/null || true
-rm -f "$HOME/Library/LaunchAgents/com.yy.codex-pet-limits.plist"
-```
-
-然后删除项目目录即可。
+读取只发生在 Codex 和桌宠可见时。Codex 关闭或桌宠隐藏后，插件会断开连接并清空状态。
 
 ---
 
 # Codex Pet Usage Plugin
 
-A tiny macOS plugin that adds a moving usage-status capsule to the Codex desktop pet.
+A lightweight macOS app that adds a small usage capsule near the Codex desktop pet.
 
-## English Guide
+`CodexPetLimits.app` starts at login, waits for Codex, shows the capsule only while Codex and the pet are visible, and clears in-memory usage state when Codex closes or the pet hides.
 
-`Codex Pet Usage Plugin` anchors a compact overlay near the Codex desktop pet. It reads the current Codex usage limits locally and displays the remaining percentage as a small status capsule.
+It does not modify Codex.app, upload data, keep old usage data, or write plugin logs.
 
-It does not modify Codex.app, upload data, or control the pet animation itself. It only renders a separate transparent overlay window.
-
-## Features
-
-- Follows the Codex desktop pet
-- Shows and hides together with the Codex desktop pet
-- Crops mood frames from the Codex pet `spritesheet.webp`
-- Shows current Codex usage remaining
-- Switches status text based on remaining usage
-- Compact capsule UI that avoids covering the conversation window
-- Uses low-frequency limit reads to avoid noisy local Codex logs
-- Manual start and stop scripts
-- Optional launch at macOS login
-
-## Requirements
-
-- macOS
-- Codex desktop app installed
-- Swift compiler installed
-
-Check Swift:
-
-```sh
-which swiftc
-```
-
-If `swiftc` is missing, install Xcode Command Line Tools first.
-
-## Usage
-
-Open the plugin directory:
+## Install
 
 ```sh
 cd codex-pet-limits
+./install-app.sh
 ```
 
-Build:
-
-```sh
-./build.sh
-```
-
-Start:
-
-```sh
-./start-overlay.sh
-```
-
-Stop:
-
-```sh
-./stop-overlay.sh
-```
-
-Enable launch at login:
-
-```sh
-./install-watcher-agent.sh
-```
-
-## Status Mapping
-
-The plugin displays the Codex 5-hour usage window as the main remaining percentage. It also reads the weekly window, but only switches to the weekly reset countdown when weekly remaining usage reaches 0%.
-
-| Remaining | Status |
-| --- | --- |
-| 60-100% | 满电 / Full |
-| 30-59% | 稳定 / Stable |
-| 10-29% | 省用 / Save |
-| 1-9% | 低电 / Low |
-| 0% or 5-hour limited | 5-hour reset countdown |
-| weekly remaining 0% | weekly reset countdown |
-
-## Local Data Access
-
-The plugin only reads local data:
-
-- `~/.codex/.codex-global-state.json`
-
-Used to locate the current Codex pet position.
-
-- `codex app-server --stdio`
-- `account/rateLimits/read`
-
-Used to read Codex rate limits. While Codex and the pet are visible, the plugin keeps one local connection open and refreshes usage at most once every 5 minutes, avoiding repeated `app-server` launches and noisy local Codex logs. When Codex closes or the capsule hides, the plugin clears the in-memory usage state and does not keep old data.
-
-## Log Cleanup
-
-If an older version made `~/.codex/logs_2.sqlite` large, install the safe cleanup agent:
+## Uninstall
 
 ```sh
 cd codex-pet-limits
-./install-cleanup-agent.sh
+./uninstall-app.sh
 ```
 
-It runs at login, every 5 minutes, and every day at 04:20. It only acts when `logs_2.sqlite` is larger than 200MB. If Codex is running, it skips cleanup and waits for a later run.
+## Behavior
 
-By default it removes old Codex log cache files instead of keeping large archives around. It does not remove sessions, settings, pet assets, or auth files. Set `KEEP_ARCHIVES=1` before running it if you want to keep one backup.
-
-The cleanup agent is quiet by default and sends output to `/dev/null`, so it does not create another log file.
-
-## More Details
-
-Detailed Chinese guide: [codex-pet-limits/README.md](codex-pet-limits/README.md)
+- Shows the 5-hour remaining usage percentage
+- Shows the weekly reset countdown only when weekly remaining usage is 0%
+- Starts automatically at login as a single lightweight app
+- Uses no watcher or cleanup legacy scripts
