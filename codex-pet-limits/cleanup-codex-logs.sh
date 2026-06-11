@@ -9,7 +9,9 @@ LOG_PREFIX="$CODEX_HOME/logs_2.sqlite"
 OVERLAY_DIR="$CODEX_HOME/pet-limits"
 
 log() {
-  print -r -- "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+  if [[ "${VERBOSE:-0}" == "1" ]]; then
+    print -r -- "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+  fi
 }
 
 codex_is_running() {
@@ -65,10 +67,8 @@ prune_old_archives() {
 
 trim_overlay_logs() {
   [[ -d "$OVERLAY_DIR" ]] || return 0
-  for file in "$OVERLAY_DIR/launch-agent.out.log" "$OVERLAY_DIR/launch-agent.err.log"; do
-    if [[ -f "$file" ]]; then
-      : > "$file"
-    fi
+  for file in "$OVERLAY_DIR/launch-agent.out.log" "$OVERLAY_DIR/launch-agent.err.log" "$OVERLAY_DIR/cleanup-agent.log"; do
+    rm -f "$file"
   done
 }
 

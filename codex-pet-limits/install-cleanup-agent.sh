@@ -3,7 +3,6 @@ set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PLIST="$HOME/Library/LaunchAgents/com.yy.codex-pet-limits-cleanup.plist"
-LOG="$DIR/cleanup-agent.log"
 
 cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -20,7 +19,7 @@ cat > "$PLIST" <<PLIST
   <key>RunAtLoad</key>
   <true/>
   <key>StartInterval</key>
-  <integer>3600</integer>
+  <integer>300</integer>
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
@@ -29,9 +28,9 @@ cat > "$PLIST" <<PLIST
     <integer>20</integer>
   </dict>
   <key>StandardOutPath</key>
-  <string>$LOG</string>
+  <string>/dev/null</string>
   <key>StandardErrorPath</key>
-  <string>$LOG</string>
+  <string>/dev/null</string>
 </dict>
 </plist>
 PLIST

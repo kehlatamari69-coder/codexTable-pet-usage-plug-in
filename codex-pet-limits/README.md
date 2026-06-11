@@ -131,9 +131,11 @@ cd codex-pet-limits
 ./install-cleanup-agent.sh
 ```
 
-清理器会在登录后、每小时、每天 04:20 运行一次。它只在日志库超过 200MB 时处理，并且如果 Codex 正在运行会自动跳过，避免移动正在写入的 SQLite 文件。
+清理器会在登录后、每 5 分钟、每天 04:20 运行一次。它只在日志库超过 200MB 时处理，并且如果 Codex 正在运行会自动跳过，避免移动正在写入的 SQLite 文件。
 
 默认会删除旧的 Codex 日志缓存，避免换个目录继续占空间。它不会删除会话、配置、宠物资源或认证文件。需要保留日志备份时，可以运行前设置 `KEEP_ARCHIVES=1`。
+
+清理器默认静默运行，输出会写到 `/dev/null`，不会额外生成自己的日志文件。
 
 ## 常见问题
 
@@ -216,9 +218,11 @@ Install the safe log cleanup agent:
 ./install-cleanup-agent.sh
 ```
 
-The cleanup agent runs at login, hourly, and every day at 04:20. It only cleans `~/.codex/logs_2.sqlite` when it is larger than 200MB and Codex is not running.
+The cleanup agent runs at login, every 5 minutes, and every day at 04:20. It only cleans `~/.codex/logs_2.sqlite` when it is larger than 200MB and Codex is not running.
 
 By default it removes old Codex log cache files instead of keeping large archives around. Set `KEEP_ARCHIVES=1` before running it if you want to keep one backup.
+
+The cleanup agent is quiet by default and sends output to `/dev/null`, so it does not create another log file.
 
 Disable both agents:
 
