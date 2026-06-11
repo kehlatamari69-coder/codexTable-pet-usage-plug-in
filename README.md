@@ -13,11 +13,14 @@
 ## 功能
 
 - 跟随 Codex 桌宠移动
-- 跟随 Codex 桌宠显示和隐藏
+- 跟随 Codex 软件启动和关闭
+- 跟随 Codex 桌宠显示、隐藏和移动
 - 从 Codex 宠物 `spritesheet.webp` 裁切不同情绪动作
-- 显示 Codex 当前剩余用量百分比
+- 显示 Codex 当前 5 小时剩余用量百分比
+- 当一周剩余用量为 0 时，显示一周刷新倒计时
 - 根据剩余用量切换状态文案
 - 小胶囊设计，尽量不遮挡对话窗口
+- 关闭后清空内存状态，下次启动重新读取新数据
 - 低频读取用量，避免频繁刷写 Codex 本地日志
 - 支持手动启动、停止
 - 支持登录 macOS 后自动启动
@@ -67,14 +70,14 @@ cd codex-pet-limits
 设置登录后自动启动：
 
 ```sh
-./install-launch-agent.sh
+./install-watcher-agent.sh
 ```
 
 ![安装流程](assets/setup-flow.svg)
 
 ## 状态含义
 
-插件只读取 Codex 的 5 小时用量窗口，并以 5 小时剩余量作为总状态。
+插件显示 Codex 的 5 小时用量窗口，并以 5 小时剩余量作为总状态。它也会读取一周窗口；只有当一周剩余用量为 0 时，才切换为一周刷新倒计时。
 
 | 剩余用量 | 显示状态 |
 | --- | --- |
@@ -82,7 +85,8 @@ cd codex-pet-limits
 | 30-59% | 稳定 |
 | 10-29% | 省用 |
 | 1-9% | 低电 |
-| 0% 或达到限制 | 重置倒计时 |
+| 0% 或达到 5 小时限制 | 5 小时重置倒计时 |
+| 一周剩余 0% | 一周刷新倒计时 |
 
 ## 情绪动作
 
@@ -107,7 +111,7 @@ cd codex-pet-limits
 - `codex app-server --stdio`
 - `account/rateLimits/read`
 
-用于读取 Codex 当前 rate limits。插件只在桌宠可见时保持一个本地连接，并且最多每 5 分钟刷新一次用量，避免反复启动 `app-server` 导致 Codex 本地日志膨胀。
+用于读取 Codex 当前 rate limits。插件只在 Codex 和桌宠可见时保持一个本地连接，并且最多每 5 分钟刷新一次用量，避免反复启动 `app-server` 导致 Codex 本地日志膨胀。关闭 Codex 或隐藏胶囊后，插件会清空内存中的用量状态，不保存旧数据。
 
 ## 日志清理
 
@@ -240,12 +244,12 @@ Stop:
 Enable launch at login:
 
 ```sh
-./install-launch-agent.sh
+./install-watcher-agent.sh
 ```
 
 ## Status Mapping
 
-The plugin reads the Codex 5-hour usage window and displays the remaining percentage for that window.
+The plugin displays the Codex 5-hour usage window as the main remaining percentage. It also reads the weekly window, but only switches to the weekly reset countdown when weekly remaining usage reaches 0%.
 
 | Remaining | Status |
 | --- | --- |
@@ -253,7 +257,8 @@ The plugin reads the Codex 5-hour usage window and displays the remaining percen
 | 30-59% | 稳定 / Stable |
 | 10-29% | 省用 / Save |
 | 1-9% | 低电 / Low |
-| 0% or limited | reset countdown |
+| 0% or 5-hour limited | 5-hour reset countdown |
+| weekly remaining 0% | weekly reset countdown |
 
 ## Local Data Access
 
@@ -266,7 +271,7 @@ Used to locate the current Codex pet position.
 - `codex app-server --stdio`
 - `account/rateLimits/read`
 
-Used to read Codex rate limits. While the pet is visible, the plugin keeps one local connection open and refreshes usage at most once every 5 minutes, avoiding repeated `app-server` launches and noisy local Codex logs.
+Used to read Codex rate limits. While Codex and the pet are visible, the plugin keeps one local connection open and refreshes usage at most once every 5 minutes, avoiding repeated `app-server` launches and noisy local Codex logs. When Codex closes or the capsule hides, the plugin clears the in-memory usage state and does not keep old data.
 
 ## Log Cleanup
 

@@ -11,8 +11,8 @@ struct RateWindow {
 }
 
 struct LimitSnapshot {
-    let primary: RateWindow?
-    let secondary: RateWindow?
+    let fiveHour: RateWindow?
+    let weekly: RateWindow?
     let reached: Bool
 }
 
@@ -52,13 +52,21 @@ final class OverlayView: NSView {
             return
         }
 
-        let overall = snapshot.primary?.remainingPercent ?? 0
-        let status = statusText(overall: overall, reached: snapshot.reached, resetsAt: snapshot.primary?.resetsAt)
-        let color = statusColor(overall: overall, reached: snapshot.reached)
-        let mood = moodFrame(overall: overall, reached: snapshot.reached)
+        let overall = snapshot.fiveHour?.remainingPercent ?? 0
+        let weekly = snapshot.weekly?.remainingPercent
+        let showWeeklyCountdown = weekly == 0
+        let status = statusText(
+            overall: overall,
+            reached: snapshot.reached,
+            fiveHourResetsAt: snapshot.fiveHour?.resetsAt,
+            weeklyRemaining: weekly,
+            weeklyResetsAt: snapshot.weekly?.resetsAt
+        )
+        let color = statusColor(overall: overall, reached: snapshot.reached, weeklyRemaining: weekly)
+        let mood = moodFrame(overall: overall, reached: snapshot.reached, weeklyRemaining: weekly)
 
         drawMoodSprite(row: mood.row, column: mood.column)
-        let statusSize: CGFloat = (snapshot.reached || overall <= 0) ? 10 : 11
+        let statusSize: CGFloat = (snapshot.reached || overall <= 0 || showWeeklyCountdown) ? 10 : 11
         drawText(status, x: 52, y: 5, size: statusSize, weight: .bold, color: color)
         drawText("\(overall)%", x: bounds.width - 38, y: 5, size: 11, weight: .bold, color: .white)
         drawMiniBar(percent: overall, color: color)
@@ -111,9 +119,21 @@ final class OverlayView: NSView {
         text.draw(in: CGRect(x: x, y: y, width: bounds.width - x - 10, height: 20), withAttributes: attributes)
     }
 
-    private func statusText(overall: Int, reached: Bool, resetsAt: Int?) -> String {
+    private func statusText(
+        overall: Int,
+        reached: Bool,
+        fiveHourResetsAt: Int?,
+        weeklyRemaining: Int?,
+        weeklyResetsAt: Int?
+    ) -> String {
+        if weeklyRemaining == 0 {
+            if let countdown = resetCountdownText(resetsAt: weeklyResetsAt) {
+                return "周\(countdown)"
+            }
+            return "周刷新"
+        }
         if reached || overall <= 0 {
-            if let countdown = resetCountdownText(resetsAt: resetsAt) {
+            if let countdown = resetCountdownText(resetsAt: fiveHourResetsAt) {
                 return countdown
             }
             return "休息"
@@ -141,16 +161,16 @@ final class OverlayView: NSView {
         return "\(max(1, minutes))m"
     }
 
-    private func moodFrame(overall: Int, reached: Bool) -> (row: Int, column: Int) {
-        if reached || overall <= 0 { return (5, 0) }
+    private func moodFrame(overall: Int, reached: Bool, weeklyRemaining: Int?) -> (row: Int, column: Int) {
+        if weeklyRemaining == 0 || reached || overall <= 0 { return (5, 0) }
         if overall < 10 { return (5, 1) }
         if overall < 30 { return (8, 2) }
         if overall < 60 { return (6, 0) }
         return (4, 2)
     }
 
-    private func statusColor(overall: Int, reached: Bool) -> NSColor {
-        if reached || overall <= 0 { return NSColor.systemRed }
+    private func statusColor(overall: Int, reached: Bool, weeklyRemaining: Int?) -> NSColor {
+        if weeklyRemaining == 0 || reached || overall <= 0 { return NSColor.systemRed }
         if overall < 10 { return NSColor.systemOrange }
         if overall < 30 { return NSColor.systemYellow }
         if overall < 60 { return NSColor.systemTeal }
@@ -192,19 +212,22 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         }
         limitsTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.overlay.needsDisplay = true
-            self?.refreshLimits(force: false)
+            self?.refreshLimits(force: self?.overlay.snapshot == nil)
         }
     }
 
     private func refreshPosition() {
         guard isCodexDesktopRunning() else {
+            overlay.snapshot = nil
             panel.orderOut(nil)
             rateLimitClient.stop()
+            NSApp.terminate(nil)
             return
         }
 
         let petState = readPetState()
         guard petState.isOpen, let anchor = petState.anchor else {
+            overlay.snapshot = nil
             panel.orderOut(nil)
             rateLimitClient.stop()
             return
@@ -221,7 +244,9 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         rateLimitClient.refreshIfNeeded(force: force) { [weak self] limits in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.overlay.snapshot = limits
+                if let limits {
+                    self.overlay.snapshot = limits
+                }
                 self.overlay.needsDisplay = true
             }
         }
@@ -250,24 +275,21 @@ final class RateLimitClient {
     private var errorOutput: FileHandle?
     private var outputBuffer = Data()
     private var lastRequestAt = Date.distantPast
-    private var latestSnapshot: LimitSnapshot?
     private var nextRequestID = 2
     private var pendingCompletions: [(LimitSnapshot?) -> Void] = []
 
     func refreshIfNeeded(force: Bool, completion: @escaping (LimitSnapshot?) -> Void) {
         queue.async {
             let now = Date()
-            if !force,
-               let latest = self.latestSnapshot,
-               now.timeIntervalSince(self.lastRequestAt) < self.minRefreshInterval {
-                completion(latest)
+            if !force, now.timeIntervalSince(self.lastRequestAt) < self.minRefreshInterval {
+                completion(nil)
                 return
             }
 
             self.pendingCompletions.append(completion)
 
             guard self.startIfNeeded() else {
-                self.finishPending(with: self.latestSnapshot)
+                self.finishPending(with: nil)
                 return
             }
 
@@ -289,7 +311,8 @@ final class RateLimitClient {
             self.errorOutput = nil
             self.process = nil
             self.outputBuffer.removeAll(keepingCapacity: false)
-            self.finishPending(with: self.latestSnapshot)
+            self.lastRequestAt = Date.distantPast
+            self.finishPending(with: nil)
         }
     }
 
@@ -335,7 +358,8 @@ final class RateLimitClient {
                 self?.output = nil
                 self?.errorOutput = nil
                 self?.process = nil
-                self?.finishPending(with: self?.latestSnapshot)
+                self?.lastRequestAt = Date.distantPast
+                self?.finishPending(with: nil)
             }
         }
 
@@ -372,7 +396,6 @@ final class RateLimitClient {
             }
 
             let snapshot = parseSnapshot(rateLimits)
-            latestSnapshot = snapshot
             finishPending(with: snapshot)
         }
     }
@@ -387,8 +410,9 @@ final class RateLimitClient {
 
 func isCodexDesktopRunning() -> Bool {
     NSWorkspace.shared.runningApplications.contains { app in
-        app.bundleURL?.path == "/Applications/Codex.app"
-            && app.activationPolicy == .regular
+        app.bundleIdentifier == "com.openai.codex"
+            || app.localizedName == "Codex"
+            || app.bundleURL?.lastPathComponent == "Codex.app"
     }
 }
 
@@ -438,10 +462,10 @@ func readPetState() -> PetState {
 }
 
 func parseSnapshot(_ rateLimits: [String: Any]) -> LimitSnapshot {
-    let primary = parseWindow(rateLimits["primary"])
-    let secondary = parseWindow(rateLimits["secondary"])
+    let fiveHour = parseWindow(rateLimits["primary"])
+    let weekly = parseWindow(rateLimits["secondary"])
     let reached = rateLimits["rateLimitReachedType"] is String
-    return LimitSnapshot(primary: primary, secondary: secondary, reached: reached)
+    return LimitSnapshot(fiveHour: fiveHour, weekly: weekly, reached: reached)
 }
 
 func parseWindow(_ value: Any?) -> RateWindow? {
