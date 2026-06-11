@@ -172,6 +172,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         defer: false
     )
     private let overlay = OverlayView(frame: CGRect(x: 0, y: 0, width: 150, height: 44))
+    private let rateLimitClient = RateLimitClient()
     private var positionTimer: Timer?
     private var limitsTimer: Timer?
 
@@ -191,7 +192,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         }
         limitsTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             self?.overlay.needsDisplay = true
-            self?.refreshLimits()
+            self?.refreshLimits(force: false)
         }
     }
 
@@ -199,20 +200,21 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         let petState = readPetState()
         guard isCodexDesktopRunning(), petState.isOpen, let anchor = petState.anchor else {
             panel.orderOut(nil)
+            rateLimitClient.stop()
             return
         }
 
         movePanel(to: anchor)
         if !panel.isVisible {
             panel.orderFrontRegardless()
-            refreshLimits()
+            refreshLimits(force: overlay.snapshot == nil)
         }
     }
 
-    private func refreshLimits() {
-        DispatchQueue.global(qos: .utility).async {
-            let limits = readRateLimits()
+    private func refreshLimits(force: Bool) {
+        rateLimitClient.refreshIfNeeded(force: force) { [weak self] limits in
             DispatchQueue.main.async {
+                guard let self else { return }
                 self.overlay.snapshot = limits
                 self.overlay.needsDisplay = true
             }
@@ -228,6 +230,152 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         let yFromTop = min(screenHeight - height - 8, anchor.y + anchor.height + 9)
         let cocoaY = max(8, screenHeight - yFromTop - height)
         panel.setFrame(CGRect(x: x, y: cocoaY, width: width, height: height), display: true)
+    }
+}
+
+final class RateLimitClient {
+    private let queue = DispatchQueue(label: "com.yy.codex-pet-limits.rate-limits")
+    private let minRefreshInterval: TimeInterval = 300
+    private let codexPath = "/Applications/Codex.app/Contents/Resources/codex"
+
+    private var process: Process?
+    private var input: FileHandle?
+    private var output: FileHandle?
+    private var errorOutput: FileHandle?
+    private var outputBuffer = Data()
+    private var lastRequestAt = Date.distantPast
+    private var latestSnapshot: LimitSnapshot?
+    private var nextRequestID = 2
+    private var pendingCompletions: [(LimitSnapshot?) -> Void] = []
+
+    func refreshIfNeeded(force: Bool, completion: @escaping (LimitSnapshot?) -> Void) {
+        queue.async {
+            let now = Date()
+            if !force,
+               let latest = self.latestSnapshot,
+               now.timeIntervalSince(self.lastRequestAt) < self.minRefreshInterval {
+                completion(latest)
+                return
+            }
+
+            self.pendingCompletions.append(completion)
+
+            guard self.startIfNeeded() else {
+                self.finishPending(with: self.latestSnapshot)
+                return
+            }
+
+            if now.timeIntervalSince(self.lastRequestAt) >= self.minRefreshInterval || force {
+                self.sendRateLimitRequest()
+                self.lastRequestAt = now
+            }
+        }
+    }
+
+    func stop() {
+        queue.async {
+            self.output?.readabilityHandler = nil
+            self.errorOutput?.readabilityHandler = nil
+            self.input?.closeFile()
+            self.process?.terminate()
+            self.input = nil
+            self.output = nil
+            self.errorOutput = nil
+            self.process = nil
+            self.outputBuffer.removeAll(keepingCapacity: false)
+            self.finishPending(with: self.latestSnapshot)
+        }
+    }
+
+    private func startIfNeeded() -> Bool {
+        if let process, process.isRunning, input != nil {
+            return true
+        }
+
+        let process = Process()
+        let inputPipe = Pipe()
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: codexPath)
+        process.arguments = ["app-server", "--stdio"]
+        process.standardInput = inputPipe
+        process.standardOutput = outputPipe
+        process.standardError = errorPipe
+
+        do {
+            try process.run()
+        } catch {
+            return false
+        }
+
+        input = inputPipe.fileHandleForWriting
+        output = outputPipe.fileHandleForReading
+        errorOutput = errorPipe.fileHandleForReading
+        self.process = process
+
+        output?.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            self?.queue.async {
+                self?.handleOutput(data)
+            }
+        }
+        errorOutput?.readabilityHandler = { handle in
+            _ = handle.availableData
+        }
+        process.terminationHandler = { [weak self] _ in
+            self?.queue.async {
+                self?.input = nil
+                self?.output = nil
+                self?.errorOutput = nil
+                self?.process = nil
+                self?.finishPending(with: self?.latestSnapshot)
+            }
+        }
+
+        let initialize = #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codex-pet-limits","title":"Codex Pet Limits","version":"0.1.0"},"capabilities":{"experimentalApi":true,"requestAttestation":false,"optOutNotificationMethods":[]}}}"# + "\n"
+        writeLine(initialize)
+        return true
+    }
+
+    private func sendRateLimitRequest() {
+        let requestID = nextRequestID
+        nextRequestID += 1
+        let request = #"{"id":\#(requestID),"method":"account/rateLimits/read","params":null}"# + "\n"
+        writeLine(request)
+    }
+
+    private func writeLine(_ line: String) {
+        guard let data = line.data(using: .utf8) else { return }
+        input?.write(data)
+    }
+
+    private func handleOutput(_ data: Data) {
+        outputBuffer.append(data)
+
+        while let newline = outputBuffer.firstIndex(of: 10) {
+            let lineData = outputBuffer[..<newline]
+            outputBuffer.removeSubrange(...newline)
+
+            guard
+                let root = try? JSONSerialization.jsonObject(with: Data(lineData)) as? [String: Any],
+                let result = root["result"] as? [String: Any],
+                let rateLimits = result["rateLimits"] as? [String: Any]
+            else {
+                continue
+            }
+
+            let snapshot = parseSnapshot(rateLimits)
+            latestSnapshot = snapshot
+            finishPending(with: snapshot)
+        }
+    }
+
+    private func finishPending(with snapshot: LimitSnapshot?) {
+        guard !pendingCompletions.isEmpty else { return }
+        let completions = pendingCompletions
+        pendingCompletions.removeAll()
+        completions.forEach { $0(snapshot) }
     }
 }
 
@@ -281,51 +429,6 @@ func readPetState() -> PetState {
         height: CGFloat(height)
     )
     return PetState(isOpen: true, anchor: anchor)
-}
-
-func readRateLimits() -> LimitSnapshot? {
-    let codex = "/Applications/Codex.app/Contents/Resources/codex"
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: codex)
-    process.arguments = ["app-server", "--stdio"]
-
-    let input = Pipe()
-    let output = Pipe()
-    process.standardInput = input
-    process.standardOutput = output
-    process.standardError = Pipe()
-
-    do {
-        try process.run()
-    } catch {
-        return nil
-    }
-
-    let initialize = #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codex-pet-limits","title":"Codex Pet Limits","version":"0.1.0"},"capabilities":{"experimentalApi":true,"requestAttestation":false,"optOutNotificationMethods":[]}}}"# + "\n"
-    let request = #"{"id":2,"method":"account/rateLimits/read","params":null}"# + "\n"
-    input.fileHandleForWriting.write(Data(initialize.utf8))
-    Thread.sleep(forTimeInterval: 0.2)
-    input.fileHandleForWriting.write(Data(request.utf8))
-    Thread.sleep(forTimeInterval: 6.0)
-    input.fileHandleForWriting.closeFile()
-
-    let data = output.fileHandleForReading.readDataToEndOfFile()
-    process.terminate()
-
-    guard let text = String(data: data, encoding: .utf8) else { return nil }
-    for line in text.split(separator: "\n").map(String.init) {
-        guard
-            line.contains(#""id":2"#),
-            let data = line.data(using: .utf8),
-            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let result = root["result"] as? [String: Any],
-            let rateLimits = result["rateLimits"] as? [String: Any]
-        else {
-            continue
-        }
-        return parseSnapshot(rateLimits)
-    }
-    return nil
 }
 
 func parseSnapshot(_ rateLimits: [String: Any]) -> LimitSnapshot {

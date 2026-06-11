@@ -14,6 +14,7 @@
 - 显示 Codex 当前剩余用量百分比
 - 根据剩余用量切换状态文案
 - 胶囊尺寸小，不遮挡对话列表
+- 低频读取用量，避免频繁刷写 Codex 本地日志
 - 支持手动启动、停止
 - 支持登录 macOS 后自动启动
 
@@ -118,7 +119,7 @@ cd codex-pet-limits
 - `codex app-server --stdio`
 - `account/rateLimits/read`
 
-用于读取 Codex 当前 rate limits。
+用于读取 Codex 当前 rate limits。插件只在桌宠可见时保持一个本地连接，并且最多每 5 分钟刷新一次用量，避免反复启动 `app-server` 导致 Codex 本地日志膨胀。
 
 ## 常见问题
 
