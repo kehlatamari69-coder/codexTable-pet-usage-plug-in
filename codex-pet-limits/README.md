@@ -9,9 +9,23 @@
 - 桌宠隐藏时隐藏胶囊并清空当前用量状态
 - 显示 5 小时剩余用量
 - 一周剩余用量为 0 时显示一周刷新倒计时
+- 每分钟读取 Codex 最新 session 里的 `rate_limits` 快照
+- 按 `window_minutes=300/10080` 识别 5 小时和一周窗口
+- 重置时间已过时自动归零已用量，避免显示过期百分比
+- 不启动 `codex app-server`，不访问网络，不读取浏览器 Cookie
 - 不保存旧用量数据
-- 不写插件日志
+- 不创建缓存或插件日志
 - 不再使用 watcher/cleanup 旧脚本
+
+## 数据来源
+
+只读最近 7 天的本地 session 文件尾部：
+
+```text
+~/.codex/sessions/YYYY/MM/DD/*.jsonl
+```
+
+没有可用快照时胶囊停留在“读取中”，不会启动额外服务或使用旧缓存。
 
 ## 安装
 
@@ -44,6 +58,6 @@
 
 `CodexPetLimits.app` is a lightweight macOS app that shows a usage capsule near the Codex desktop pet.
 
-It starts at login, waits for Codex, reads fresh usage while Codex and the pet are visible, and clears in-memory state when Codex closes or the pet hides.
+It starts at login, waits for Codex, reads the newest local session snapshot once per minute, and clears in-memory state when Codex closes or the pet hides.
 
-It does not keep old usage data and does not write plugin logs.
+It uses no network, browser cookies, app-server process, cache, or plugin logs.

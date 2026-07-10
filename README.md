@@ -16,8 +16,11 @@
 - 跟随 Codex 桌宠显示、隐藏和移动
 - 显示 Codex 当前 5 小时剩余用量百分比
 - 当一周剩余用量为 0 时，显示一周刷新倒计时
+- 每分钟读取 Codex 最新 session 中的用量快照
+- 按 300 分钟和 10080 分钟识别 5 小时/一周窗口，避免字段顺序变化导致误读
 - 关闭或隐藏后清空内存状态，下次启动重新读取新数据
-- 低频读取用量，避免频繁刷写 Codex 本地日志
+- 不启动 `codex app-server`，不访问网络，不读取浏览器 Cookie
+- 不创建缓存或插件日志
 - 单 app 自启动，没有 watcher/cleanup 旧脚本
 
 ## 安装
@@ -62,9 +65,9 @@ cd codex-pet-limits
 插件只读取本机数据：
 
 - `~/.codex/.codex-global-state.json`：获取 Codex 桌宠位置
-- `codex app-server --stdio` + `account/rateLimits/read`：读取当前 rate limits
+- `~/.codex/sessions/YYYY/MM/DD/*.jsonl`：只读最近 session 尾部的 `rate_limits`
 
-读取只发生在 Codex 和桌宠可见时。Codex 关闭或桌宠隐藏后，插件会断开连接并清空状态。
+读取只发生在 Codex 和桌宠可见时。重置时间已过的窗口会自动按 0% 已用处理。Codex 关闭或桌宠隐藏后，插件会清空内存状态，不留下旧用量缓存。
 
 ---
 
@@ -94,5 +97,8 @@ cd codex-pet-limits
 
 - Shows the 5-hour remaining usage percentage
 - Shows the weekly reset countdown only when weekly remaining usage is 0%
+- Reads the newest local Codex session snapshot once per minute
+- Identifies 5-hour and weekly windows by duration instead of field order
+- Uses no network, browser cookies, app-server process, cache, or plugin logs
 - Starts automatically at login as a single lightweight app
 - Uses no watcher or cleanup legacy scripts

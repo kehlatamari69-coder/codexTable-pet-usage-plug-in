@@ -28,6 +28,8 @@ mkdir -p "$TARGET_DIR"
 rm -rf "$TARGET_APP"
 cp -R "$SOURCE_APP" "$TARGET_APP"
 codesign --force --deep --sign - "$TARGET_APP"
+rm -f "$HOME/.codex/pet-limits/usage-cache.json"
+rmdir "$HOME/.codex/pet-limits" 2>/dev/null || true
 
 cat > "$PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

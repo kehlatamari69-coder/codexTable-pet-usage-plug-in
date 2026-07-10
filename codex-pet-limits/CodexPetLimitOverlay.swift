@@ -155,6 +155,9 @@ final class OverlayView: NSView {
         }
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
+        if hours >= 24 {
+            return "\(hours / 24)d\(hours % 24)h"
+        }
         if hours > 0 {
             return "\(hours)h\(minutes)m"
         }
@@ -196,6 +199,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     private var positionTimer: Timer?
     private var limitsTimer: Timer?
     private var codexWaitTimer: Timer?
+    private var lastPanelFrame: CGRect?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -247,14 +251,15 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
 
     private func startActiveTimers() {
         if positionTimer == nil {
-            positionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            positionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
                 self?.refreshPosition()
             }
         }
         if limitsTimer == nil {
             limitsTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-                self?.overlay.needsDisplay = true
-                self?.refreshLimits(force: self?.overlay.snapshot == nil)
+                guard let self, self.panel.isVisible else { return }
+                self.overlay.needsDisplay = true
+                self.refreshLimits(force: false)
             }
         }
     }
@@ -282,6 +287,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         overlay.snapshot = nil
         overlay.needsDisplay = true
         panel.orderOut(nil)
+        lastPanelFrame = nil
         rateLimitClient.stop()
     }
 
@@ -300,7 +306,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         movePanel(to: anchor)
         if !panel.isVisible {
             panel.orderFrontRegardless()
-            refreshLimits(force: overlay.snapshot == nil)
+            refreshLimits(force: true)
         }
     }
 
@@ -310,8 +316,8 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 if let limits {
                     self.overlay.snapshot = limits
+                    self.overlay.needsDisplay = true
                 }
-                self.overlay.needsDisplay = true
             }
         }
     }
@@ -324,23 +330,19 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         let x = max(8, anchor.x + anchor.width / 2 - width / 2)
         let yFromTop = min(screenHeight - height - 8, anchor.y + anchor.height + 9)
         let cocoaY = max(8, screenHeight - yFromTop - height)
-        panel.setFrame(CGRect(x: x, y: cocoaY, width: width, height: height), display: true)
+        let frame = CGRect(x: x, y: cocoaY, width: width, height: height)
+        guard frame != lastPanelFrame else { return }
+        lastPanelFrame = frame
+        panel.setFrame(frame, display: true)
     }
 }
 
 final class RateLimitClient {
     private let queue = DispatchQueue(label: "com.yy.codex-pet-limits.rate-limits")
-    private let minRefreshInterval: TimeInterval = 300
-    private let codexPath = "/Applications/Codex.app/Contents/Resources/codex"
+    private let minRefreshInterval: TimeInterval = 55
 
-    private var process: Process?
-    private var input: FileHandle?
-    private var output: FileHandle?
-    private var errorOutput: FileHandle?
-    private var outputBuffer = Data()
     private var lastRequestAt = Date.distantPast
-    private var nextRequestID = 2
-    private var pendingCompletions: [(LimitSnapshot?) -> Void] = []
+    private var isRefreshing = false
 
     func refreshIfNeeded(force: Bool, completion: @escaping (LimitSnapshot?) -> Void) {
         queue.async {
@@ -349,126 +351,156 @@ final class RateLimitClient {
                 completion(nil)
                 return
             }
-
-            self.pendingCompletions.append(completion)
-
-            guard self.startIfNeeded() else {
-                self.finishPending(with: nil)
+            guard !self.isRefreshing else {
                 return
             }
-
-            if now.timeIntervalSince(self.lastRequestAt) >= self.minRefreshInterval || force {
-                self.sendRateLimitRequest()
-                self.lastRequestAt = now
-            }
+            self.isRefreshing = true
+            self.lastRequestAt = now
+            let snapshot = readLatestLocalRateLimits(now: now)
+            self.isRefreshing = false
+            completion(snapshot)
         }
     }
 
     func stop() {
         queue.async {
-            self.output?.readabilityHandler = nil
-            self.errorOutput?.readabilityHandler = nil
-            self.input?.closeFile()
-            self.process?.terminate()
-            self.input = nil
-            self.output = nil
-            self.errorOutput = nil
-            self.process = nil
-            self.outputBuffer.removeAll(keepingCapacity: false)
             self.lastRequestAt = Date.distantPast
-            self.finishPending(with: nil)
+            self.isRefreshing = false
         }
     }
+}
 
-    private func startIfNeeded() -> Bool {
-        if let process, process.isRunning, input != nil {
-            return true
+struct LocalRateLimitCandidate {
+    let timestamp: Date
+    let snapshot: LimitSnapshot
+}
+
+func readLatestLocalRateLimits(now: Date) -> LimitSnapshot? {
+    var latest: LocalRateLimitCandidate?
+    for url in recentSessionFiles(now: now).prefix(80) {
+        guard let candidate = latestRateLimitCandidate(in: url, now: now) else {
+            continue
         }
-
-        let process = Process()
-        let inputPipe = Pipe()
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: codexPath)
-        process.arguments = ["app-server", "--stdio"]
-        process.standardInput = inputPipe
-        process.standardOutput = outputPipe
-        process.standardError = errorPipe
-
-        do {
-            try process.run()
-        } catch {
-            return false
-        }
-
-        input = inputPipe.fileHandleForWriting
-        output = outputPipe.fileHandleForReading
-        errorOutput = errorPipe.fileHandleForReading
-        self.process = process
-
-        output?.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            self?.queue.async {
-                self?.handleOutput(data)
-            }
-        }
-        errorOutput?.readabilityHandler = { handle in
-            _ = handle.availableData
-        }
-        process.terminationHandler = { [weak self] _ in
-            self?.queue.async {
-                self?.input = nil
-                self?.output = nil
-                self?.errorOutput = nil
-                self?.process = nil
-                self?.lastRequestAt = Date.distantPast
-                self?.finishPending(with: nil)
-            }
-        }
-
-        let initialize = #"{"id":1,"method":"initialize","params":{"clientInfo":{"name":"codex-pet-limits","title":"Codex Pet Limits","version":"0.1.0"},"capabilities":{"experimentalApi":true,"requestAttestation":false,"optOutNotificationMethods":[]}}}"# + "\n"
-        writeLine(initialize)
-        return true
-    }
-
-    private func sendRateLimitRequest() {
-        let requestID = nextRequestID
-        nextRequestID += 1
-        let request = #"{"id":\#(requestID),"method":"account/rateLimits/read","params":null}"# + "\n"
-        writeLine(request)
-    }
-
-    private func writeLine(_ line: String) {
-        guard let data = line.data(using: .utf8) else { return }
-        input?.write(data)
-    }
-
-    private func handleOutput(_ data: Data) {
-        outputBuffer.append(data)
-
-        while let newline = outputBuffer.firstIndex(of: 10) {
-            let lineData = outputBuffer[..<newline]
-            outputBuffer.removeSubrange(...newline)
-
-            guard
-                let root = try? JSONSerialization.jsonObject(with: Data(lineData)) as? [String: Any],
-                let result = root["result"] as? [String: Any],
-                let rateLimits = result["rateLimits"] as? [String: Any]
-            else {
-                continue
-            }
-
-            let snapshot = parseSnapshot(rateLimits)
-            finishPending(with: snapshot)
+        if latest == nil || candidate.timestamp > latest!.timestamp {
+            latest = candidate
         }
     }
+    return latest?.snapshot
+}
 
-    private func finishPending(with snapshot: LimitSnapshot?) {
-        guard !pendingCompletions.isEmpty else { return }
-        let completions = pendingCompletions
-        pendingCompletions.removeAll()
-        completions.forEach { $0(snapshot) }
+func recentSessionFiles(now: Date) -> [URL] {
+    let fileManager = FileManager.default
+    let root = fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
+    let calendar = Calendar.current
+    var urls: [URL] = []
+
+    for dayOffset in 0..<8 {
+        guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: now) else {
+            continue
+        }
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = components.year, let month = components.month, let day = components.day else {
+            continue
+        }
+        let directory = root
+            .appendingPathComponent(String(format: "%04d", year))
+            .appendingPathComponent(String(format: "%02d", month))
+            .appendingPathComponent(String(format: "%02d", day))
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            continue
+        }
+        urls.append(contentsOf: entries.filter { $0.pathExtension == "jsonl" })
+    }
+
+    return urls.sorted { $0.lastPathComponent > $1.lastPathComponent }
+}
+
+func latestRateLimitCandidate(in url: URL, now: Date) -> LocalRateLimitCandidate? {
+    guard let data = readTail(of: url, maxBytes: 1_000_000) else {
+        return nil
+    }
+    let text = String(decoding: data, as: UTF8.self)
+
+    for line in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+        guard
+            let data = String(line).data(using: .utf8),
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let payload = root["payload"] as? [String: Any],
+            let rateLimits = payload["rate_limits"] as? [String: Any],
+            let snapshot = parseLocalSnapshot(rateLimits, now: now)
+        else {
+            continue
+        }
+        let timestamp = parseISO8601(root["timestamp"] as? String) ?? .distantPast
+        return LocalRateLimitCandidate(timestamp: timestamp, snapshot: snapshot)
+    }
+    return nil
+}
+
+func readTail(of url: URL, maxBytes: UInt64) -> Data? {
+    guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? handle.close() }
+    guard let size = try? handle.seekToEnd() else { return nil }
+    let offset = size > maxBytes ? size - maxBytes : 0
+    do {
+        try handle.seek(toOffset: offset)
+        return try handle.readToEnd()
+    } catch {
+        return nil
+    }
+}
+
+func parseISO8601(_ value: String?) -> Date? {
+    guard let value else { return nil }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.date(from: value)
+}
+
+func parseLocalSnapshot(_ rateLimits: [String: Any], now: Date) -> LimitSnapshot? {
+    let primary = rateLimits["primary"] as? [String: Any]
+    let secondary = rateLimits["secondary"] as? [String: Any]
+    let windows = [primary, secondary].compactMap { $0 }
+
+    let fiveHourData = windows.first { integer($0["window_minutes"]) == 300 } ?? primary
+    let weeklyData = windows.first { integer($0["window_minutes"]) == 10_080 } ?? secondary
+    let fiveHour = parseLocalWindow(fiveHourData, now: now)
+    let weekly = parseLocalWindow(weeklyData, now: now)
+    guard fiveHour != nil || weekly != nil else { return nil }
+
+    let exhausted = fiveHour?.remainingPercent == 0 || weekly?.remainingPercent == 0
+    let reached = rateLimits["rate_limit_reached_type"] is String && exhausted
+    return LimitSnapshot(fiveHour: fiveHour, weekly: weekly, reached: reached)
+}
+
+func parseLocalWindow(_ value: [String: Any]?, now: Date) -> RateWindow? {
+    guard let value, let used = number(value["used_percent"]) else { return nil }
+    let resetsAt = integer(value["resets_at"])
+    if let resetsAt, resetsAt <= Int(now.timeIntervalSince1970) {
+        return RateWindow(usedPercent: 0, resetsAt: nil)
+    }
+    return RateWindow(usedPercent: Int(used.rounded()).clamped(to: 0...100), resetsAt: resetsAt)
+}
+
+func number(_ value: Any?) -> Double? {
+    if let value = value as? NSNumber { return value.doubleValue }
+    if let value = value as? String { return Double(value) }
+    return nil
+}
+
+func integer(_ value: Any?) -> Int? {
+    if let value = value as? NSNumber { return value.intValue }
+    if let value = value as? String { return Int(value) }
+    return nil
+}
+
+extension Comparable {
+    func clamped(to range: ClosedRange<Self>) -> Self {
+        min(max(self, range.lowerBound), range.upperBound)
     }
 }
 
@@ -527,18 +559,15 @@ func readPetState() -> PetState {
     return PetState(isOpen: true, anchor: anchor)
 }
 
-func parseSnapshot(_ rateLimits: [String: Any]) -> LimitSnapshot {
-    let fiveHour = parseWindow(rateLimits["primary"])
-    let weekly = parseWindow(rateLimits["secondary"])
-    let reached = rateLimits["rateLimitReachedType"] is String
-    return LimitSnapshot(fiveHour: fiveHour, weekly: weekly, reached: reached)
-}
-
-func parseWindow(_ value: Any?) -> RateWindow? {
-    guard let dict = value as? [String: Any] else { return nil }
-    let used = dict["usedPercent"] as? Int ?? Int(dict["usedPercent"] as? Double ?? 0)
-    let resetsAt = dict["resetsAt"] as? Int
-    return RateWindow(usedPercent: used, resetsAt: resetsAt)
+if CommandLine.arguments.contains("--print-usage") {
+    if let snapshot = readLatestLocalRateLimits(now: Date()) {
+        let fiveHour = (snapshot.fiveHour?.remainingPercent).map(String.init) ?? "unknown"
+        let weekly = (snapshot.weekly?.remainingPercent).map(String.init) ?? "unknown"
+        print("fiveHourRemaining=\(fiveHour) weeklyRemaining=\(weekly)")
+        exit(EXIT_SUCCESS)
+    }
+    print("usage snapshot unavailable")
+    exit(EXIT_FAILURE)
 }
 
 let app = NSApplication.shared
