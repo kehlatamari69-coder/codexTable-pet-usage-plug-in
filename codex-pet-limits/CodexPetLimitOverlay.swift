@@ -34,6 +34,17 @@ final class OverlayView: NSView {
         let path = NSHomeDirectory() + "/.codex/pets/sproutpal/spritesheet.webp"
         return NSImage(contentsOfFile: path)
     }()
+    private let spriteRows: CGFloat = {
+        let url = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".codex/pets/sproutpal/pet.json")
+        guard
+            let data = try? Data(contentsOf: url),
+            let manifest = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let version = integer(manifest["spriteVersionNumber"])
+        else {
+            return 9
+        }
+        return version >= 2 ? 11 : 9
+    }()
 
     override var isFlipped: Bool { true }
 
@@ -93,19 +104,22 @@ final class OverlayView: NSView {
         }
 
         let columns: CGFloat = 8
-        let rows: CGFloat = 9
+        let rows = spriteRows
         let frameWidth = spriteImage.size.width / columns
         let frameHeight = spriteImage.size.height / rows
+        let sourceY = spriteImage.size.height - CGFloat(row + 1) * frameHeight
         let source = CGRect(
             x: CGFloat(column) * frameWidth,
-            y: CGFloat(row) * frameHeight,
+            y: sourceY,
             width: frameWidth,
             height: frameHeight
         )
         let maxHeight: CGFloat = 38
         let targetWidth = maxHeight * (frameWidth / frameHeight)
         let target = CGRect(x: 9, y: 3, width: targetWidth, height: maxHeight)
+        NSGraphicsContext.saveGraphicsState()
         spriteImage.draw(in: target, from: source, operation: .sourceOver, fraction: 1.0, respectFlipped: true, hints: nil)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func drawText(_ text: String, x: CGFloat, y: CGFloat, size: CGFloat, weight: NSFont.Weight, color: NSColor) {
@@ -557,6 +571,25 @@ func readPetState() -> PetState {
         height: CGFloat(height)
     )
     return PetState(isOpen: true, anchor: anchor)
+}
+
+if let previewIndex = CommandLine.arguments.firstIndex(of: "--render-preview"),
+   CommandLine.arguments.indices.contains(previewIndex + 1) {
+    _ = NSApplication.shared
+    let view = OverlayView(frame: CGRect(x: 0, y: 0, width: 150, height: 44))
+    view.snapshot = LimitSnapshot(
+        fiveHour: RateWindow(usedPercent: 2, resetsAt: nil),
+        weekly: RateWindow(usedPercent: 17, resetsAt: nil),
+        reached: false
+    )
+    if let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        if let png = bitmap.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: CommandLine.arguments[previewIndex + 1]))
+            exit(EXIT_SUCCESS)
+        }
+    }
+    exit(EXIT_FAILURE)
 }
 
 if CommandLine.arguments.contains("--print-usage") {

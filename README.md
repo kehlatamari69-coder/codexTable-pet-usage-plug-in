@@ -14,6 +14,7 @@
 
 - 跟随 Codex 软件启动和关闭
 - 跟随 Codex 桌宠显示、隐藏和移动
+- 自动适配 sproutpal v1（8×9）和 v2（8×11）spritesheet
 - 显示 Codex 当前 5 小时剩余用量百分比
 - 当一周剩余用量为 0 时，显示一周刷新倒计时
 - 每分钟读取 Codex 最新 session 中的用量快照

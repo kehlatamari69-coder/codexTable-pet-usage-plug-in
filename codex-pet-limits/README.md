@@ -7,6 +7,7 @@
 - 登录后自动启动 `CodexPetLimits.app`
 - Codex 打开时进入工作状态，Codex 关闭时断开用量连接并清空状态
 - 桌宠隐藏时隐藏胶囊并清空当前用量状态
+- 自动适配 sproutpal v1（8×9）和 v2（8×11）spritesheet
 - 显示 5 小时剩余用量
 - 一周剩余用量为 0 时显示一周刷新倒计时
 - 每分钟读取 Codex 最新 session 里的 `rate_limits` 快照
