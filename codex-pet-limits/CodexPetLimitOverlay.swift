@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Foundation
 
 struct RateWindow {
@@ -27,6 +28,15 @@ struct PetState {
     let isOpen: Bool
     let anchor: PetAnchor?
 }
+
+struct PetAnchorSample {
+    let anchor: PetAnchor
+    let overlayX: Double
+    let overlayY: Double
+    let capturedAt: Date
+}
+
+private var petAnchorSample: PetAnchorSample?
 
 final class OverlayView: NSView {
     var snapshot: LimitSnapshot?
@@ -63,7 +73,7 @@ final class OverlayView: NSView {
             return
         }
 
-        let overall = snapshot.fiveHour?.remainingPercent ?? 0
+        let overall = snapshot.fiveHour?.remainingPercent
         let weekly = snapshot.weekly?.remainingPercent
         let showWeeklyCountdown = weekly == 0
         let status = statusText(
@@ -77,13 +87,14 @@ final class OverlayView: NSView {
         let mood = moodFrame(overall: overall, reached: snapshot.reached, weeklyRemaining: weekly)
 
         drawMoodSprite(row: mood.row, column: mood.column)
-        let statusSize: CGFloat = (snapshot.reached || overall <= 0 || showWeeklyCountdown) ? 10 : 11
+        let statusSize: CGFloat = (snapshot.reached || overall == nil || overall == 0 || showWeeklyCountdown) ? 10 : 11
         drawText(status, x: 52, y: 5, size: statusSize, weight: .bold, color: color)
-        drawText("\(overall)%", x: bounds.width - 38, y: 5, size: 11, weight: .bold, color: .white)
+        let percentageText = overall.map { "\($0)%" } ?? "--%"
+        drawText(percentageText, x: bounds.width - 38, y: 5, size: 11, weight: .bold, color: .white)
         drawMiniBar(percent: overall, color: color)
     }
 
-    private func drawMiniBar(percent: Int, color: NSColor) {
+    private func drawMiniBar(percent: Int?, color: NSColor) {
         let barX: CGFloat = 52
         let barY: CGFloat = 27
         let barWidth: CGFloat = bounds.width - 62
@@ -92,7 +103,8 @@ final class OverlayView: NSView {
         NSColor.white.withAlphaComponent(0.18).setFill()
         background.fill()
 
-        let fillWidth = max(2, barWidth * CGFloat(percent) / 100)
+        guard let percent, percent > 0 else { return }
+        let fillWidth = barWidth * CGFloat(percent) / 100
         let fill = Path.roundedRect(CGRect(x: barX, y: barY, width: fillWidth, height: barHeight), radius: 4.5)
         color.setFill()
         fill.fill()
@@ -134,7 +146,7 @@ final class OverlayView: NSView {
     }
 
     private func statusText(
-        overall: Int,
+        overall: Int?,
         reached: Bool,
         fiveHourResetsAt: Int?,
         weeklyRemaining: Int?,
@@ -145,6 +157,9 @@ final class OverlayView: NSView {
                 return "周\(countdown)"
             }
             return "周刷新"
+        }
+        guard let overall else {
+            return "等待用量"
         }
         if reached || overall <= 0 {
             if let countdown = resetCountdownText(resetsAt: fiveHourResetsAt) {
@@ -178,16 +193,20 @@ final class OverlayView: NSView {
         return "\(max(1, minutes))m"
     }
 
-    private func moodFrame(overall: Int, reached: Bool, weeklyRemaining: Int?) -> (row: Int, column: Int) {
-        if weeklyRemaining == 0 || reached || overall <= 0 { return (5, 0) }
+    private func moodFrame(overall: Int?, reached: Bool, weeklyRemaining: Int?) -> (row: Int, column: Int) {
+        if weeklyRemaining == 0 || reached { return (5, 0) }
+        guard let overall else { return (0, 4) }
+        if overall <= 0 { return (5, 0) }
         if overall < 10 { return (5, 1) }
         if overall < 30 { return (8, 2) }
         if overall < 60 { return (6, 0) }
         return (4, 2)
     }
 
-    private func statusColor(overall: Int, reached: Bool, weeklyRemaining: Int?) -> NSColor {
-        if weeklyRemaining == 0 || reached || overall <= 0 { return NSColor.systemRed }
+    private func statusColor(overall: Int?, reached: Bool, weeklyRemaining: Int?) -> NSColor {
+        if weeklyRemaining == 0 || reached { return NSColor.systemRed }
+        guard let overall else { return NSColor.secondaryLabelColor }
+        if overall <= 0 { return NSColor.systemRed }
         if overall < 10 { return NSColor.systemOrange }
         if overall < 30 { return NSColor.systemYellow }
         if overall < 60 { return NSColor.systemTeal }
@@ -214,6 +233,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     private var limitsTimer: Timer?
     private var codexWaitTimer: Timer?
     private var lastPanelFrame: CGRect?
+    private var stateGeneration = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -271,7 +291,12 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         }
         if limitsTimer == nil {
             limitsTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-                guard let self, self.panel.isVisible else { return }
+                guard let self else { return }
+                guard isCodexDesktopRunning() else {
+                    self.updateCodexLifecycle()
+                    return
+                }
+                guard self.panel.isVisible else { return }
                 self.overlay.needsDisplay = true
                 self.refreshLimits(force: false)
             }
@@ -298,6 +323,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     }
 
     private func hideAndClear() {
+        stateGeneration &+= 1
         overlay.snapshot = nil
         overlay.needsDisplay = true
         panel.orderOut(nil)
@@ -306,11 +332,6 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     }
 
     private func refreshPosition() {
-        guard isCodexDesktopRunning() else {
-            updateCodexLifecycle()
-            return
-        }
-
         let petState = readPetState()
         guard petState.isOpen, let anchor = petState.anchor else {
             hideAndClear()
@@ -325,9 +346,12 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     }
 
     private func refreshLimits(force: Bool) {
+        let generation = stateGeneration
         rateLimitClient.refreshIfNeeded(force: force) { [weak self] limits in
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self,
+                      generation == self.stateGeneration,
+                      self.panel.isVisible else { return }
                 if let limits {
                     self.overlay.snapshot = limits
                     self.overlay.needsDisplay = true
@@ -337,18 +361,29 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
     }
 
     private func movePanel(to anchor: PetAnchor) {
-        guard let screen = NSScreen.main else { return }
-        let screenHeight = screen.frame.height
-        let width: CGFloat = 150
-        let height: CGFloat = 44
-        let x = max(8, anchor.x + anchor.width / 2 - width / 2)
-        let yFromTop = min(screenHeight - height - 8, anchor.y + anchor.height + 9)
-        let cocoaY = max(8, screenHeight - yFromTop - height)
-        let frame = CGRect(x: x, y: cocoaY, width: width, height: height)
+        let screens = NSScreen.screens
+        guard let primary = screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.main else { return }
+        let primaryTop = primary.frame.maxY
+        let petCenter = CGPoint(
+            x: anchor.x + anchor.width / 2,
+            y: primaryTop - anchor.y - anchor.height / 2
+        )
+        let targetScreen = screens.first(where: { $0.frame.contains(petCenter) }) ?? primary
+        let frame = panelFrame(for: anchor, screen: targetScreen.frame, primaryTop: primaryTop)
         guard frame != lastPanelFrame else { return }
         lastPanelFrame = frame
         panel.setFrame(frame, display: true)
     }
+}
+
+func panelFrame(for anchor: PetAnchor, screen: CGRect, primaryTop: CGFloat) -> CGRect {
+    let width: CGFloat = 150
+    let height: CGFloat = 44
+    let desiredX = anchor.x + anchor.width / 2 - width / 2
+    let desiredY = primaryTop - (anchor.y + anchor.height + 9) - height
+    let x = min(max(screen.minX + 8, desiredX), screen.maxX - width - 8)
+    let y = min(max(screen.minY + 8, desiredY), screen.maxY - height - 8)
+    return CGRect(x: x, y: y, width: width, height: height)
 }
 
 final class RateLimitClient {
@@ -389,10 +424,18 @@ struct LocalRateLimitCandidate {
     let snapshot: LimitSnapshot
 }
 
+struct RecentSessionFile {
+    let url: URL
+    let modifiedAt: Date
+}
+
 func readLatestLocalRateLimits(now: Date) -> LimitSnapshot? {
     var latest: LocalRateLimitCandidate?
-    for url in recentSessionFiles(now: now).prefix(80) {
-        guard let candidate = latestRateLimitCandidate(in: url, now: now) else {
+    for file in recentSessionFiles(now: now) {
+        if let latest, file.modifiedAt < latest.timestamp {
+            break
+        }
+        guard let candidate = latestRateLimitCandidate(in: file.url, now: now) else {
             continue
         }
         if latest == nil || candidate.timestamp > latest!.timestamp {
@@ -402,11 +445,11 @@ func readLatestLocalRateLimits(now: Date) -> LimitSnapshot? {
     return latest?.snapshot
 }
 
-func recentSessionFiles(now: Date) -> [URL] {
+func recentSessionFiles(now: Date) -> [RecentSessionFile] {
     let fileManager = FileManager.default
     let root = fileManager.homeDirectoryForCurrentUser.appendingPathComponent(".codex/sessions")
     let calendar = Calendar.current
-    var urls: [URL] = []
+    var files: [(url: URL, modifiedAt: Date)] = []
 
     for dayOffset in 0..<8 {
         guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: now) else {
@@ -422,24 +465,36 @@ func recentSessionFiles(now: Date) -> [URL] {
             .appendingPathComponent(String(format: "%02d", day))
         guard let entries = try? fileManager.contentsOfDirectory(
             at: directory,
-            includingPropertiesForKeys: nil,
+            includingPropertiesForKeys: [.contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else {
             continue
         }
-        urls.append(contentsOf: entries.filter { $0.pathExtension == "jsonl" })
+        for url in entries where url.pathExtension == "jsonl" {
+            let modifiedAt = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                ?? .distantPast
+            files.append((url, modifiedAt))
+        }
     }
 
-    return urls.sorted { $0.lastPathComponent > $1.lastPathComponent }
+    return files.sorted { lhs, rhs in
+        if lhs.modifiedAt == rhs.modifiedAt {
+            return lhs.url.lastPathComponent > rhs.url.lastPathComponent
+        }
+        return lhs.modifiedAt > rhs.modifiedAt
+    }.map { RecentSessionFile(url: $0.url, modifiedAt: $0.modifiedAt) }
 }
 
 func latestRateLimitCandidate(in url: URL, now: Date) -> LocalRateLimitCandidate? {
-    guard let data = readTail(of: url, maxBytes: 1_000_000) else {
+    guard let data = readTail(of: url, maxBytes: 512_000) else {
         return nil
     }
     let text = String(decoding: data, as: UTF8.self)
 
     for line in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+        guard line.contains("\"type\":\"token_count\""), line.contains("\"rate_limits\"") else {
+            continue
+        }
         guard
             let data = String(line).data(using: .utf8),
             let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -468,11 +523,22 @@ func readTail(of url: URL, maxBytes: UInt64) -> Data? {
     }
 }
 
-func parseISO8601(_ value: String?) -> Date? {
-    guard let value else { return nil }
+private let iso8601WithFractionalSeconds: ISO8601DateFormatter = {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.date(from: value)
+    return formatter
+}()
+
+private let iso8601WithoutFractionalSeconds: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter
+}()
+
+func parseISO8601(_ value: String?) -> Date? {
+    guard let value else { return nil }
+    return iso8601WithFractionalSeconds.date(from: value)
+        ?? iso8601WithoutFractionalSeconds.date(from: value)
 }
 
 func parseLocalSnapshot(_ rateLimits: [String: Any], now: Date) -> LimitSnapshot? {
@@ -480,8 +546,14 @@ func parseLocalSnapshot(_ rateLimits: [String: Any], now: Date) -> LimitSnapshot
     let secondary = rateLimits["secondary"] as? [String: Any]
     let windows = [primary, secondary].compactMap { $0 }
 
-    let fiveHourData = windows.first { integer($0["window_minutes"]) == 300 } ?? primary
-    let weeklyData = windows.first { integer($0["window_minutes"]) == 10_080 } ?? secondary
+    var fiveHourData = windows.first { integer($0["window_minutes"]) == 300 }
+    var weeklyData = windows.first { integer($0["window_minutes"]) == 10_080 }
+
+    // Legacy records omitted window_minutes but consistently used primary/secondary.
+    if fiveHourData == nil, weeklyData == nil, windows.allSatisfy({ integer($0["window_minutes"]) == nil }) {
+        fiveHourData = primary
+        weeklyData = secondary
+    }
     let fiveHour = parseLocalWindow(fiveHourData, now: now)
     let weekly = parseLocalWindow(weeklyData, now: now)
     guard fiveHour != nil || weekly != nil else { return nil }
@@ -544,6 +616,7 @@ func readPetState() -> PetState {
         false
 
     guard isOpen else {
+        petAnchorSample = nil
         return PetState(isOpen: false, anchor: nil)
     }
 
@@ -551,26 +624,204 @@ func readPetState() -> PetState {
         (root["electron-avatar-overlay-bounds"] as? [String: Any]) ??
         (state["electron-avatar-overlay-bounds"] as? [String: Any])
 
-    guard
-        let bounds,
-        let mascot = bounds["mascot"] as? [String: Any],
-        let left = mascot["left"] as? Double,
-        let top = mascot["top"] as? Double,
-        let width = mascot["width"] as? Double,
-        let height = mascot["height"] as? Double,
-        let overlayX = bounds["x"] as? Double,
-        let overlayY = bounds["y"] as? Double
-    else {
+    guard let bounds,
+          let overlayX = number(bounds["x"]),
+          let overlayY = number(bounds["y"]) else {
         return PetState(isOpen: true, anchor: nil)
     }
 
-    let anchor = PetAnchor(
-        x: CGFloat(overlayX + left),
-        y: CGFloat(overlayY + top),
-        width: CGFloat(width),
-        height: CGFloat(height)
+    if let mascot = bounds["mascot"] as? [String: Any],
+       let left = number(mascot["left"]),
+       let top = number(mascot["top"]),
+       let width = number(mascot["width"]),
+       let height = number(mascot["height"]) {
+        let anchor = PetAnchor(
+            x: CGFloat(overlayX + left),
+            y: CGFloat(overlayY + top),
+            width: CGFloat(width),
+            height: CGFloat(height)
+        )
+        return PetState(isOpen: true, anchor: anchor)
+    }
+
+    return PetState(
+        isOpen: true,
+        anchor: trackedPetWindowAnchor(overlayX: overlayX, overlayY: overlayY, now: Date())
     )
-    return PetState(isOpen: true, anchor: anchor)
+}
+
+func trackedPetWindowAnchor(overlayX: Double, overlayY: Double, now: Date) -> PetAnchor? {
+    if let sample = petAnchorSample, now.timeIntervalSince(sample.capturedAt) < 30 {
+        return shiftedPetAnchor(sample: sample, overlayX: overlayX, overlayY: overlayY)
+    }
+
+    if let anchor = visiblePetWindowAnchor() {
+        petAnchorSample = PetAnchorSample(
+            anchor: anchor,
+            overlayX: overlayX,
+            overlayY: overlayY,
+            capturedAt: now
+        )
+        return anchor
+    }
+
+    petAnchorSample = nil
+    return nil
+}
+
+func shiftedPetAnchor(sample: PetAnchorSample, overlayX: Double, overlayY: Double) -> PetAnchor {
+    PetAnchor(
+        x: sample.anchor.x + CGFloat(overlayX - sample.overlayX),
+        y: sample.anchor.y + CGFloat(overlayY - sample.overlayY),
+        width: sample.anchor.width,
+        height: sample.anchor.height
+    )
+}
+
+func visiblePetWindowAnchor() -> PetAnchor? {
+    guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
+        return nil
+    }
+
+    return petWindowAnchor(in: windows)
+}
+
+func petWindowAnchor(in windows: [[String: Any]]) -> PetAnchor? {
+    for window in windows {
+        let owner = window[kCGWindowOwnerName as String] as? String ?? ""
+        let name = window[kCGWindowName as String] as? String ?? ""
+        guard
+            let bounds = window[kCGWindowBounds as String] as? [String: Any],
+            let x = number(bounds["X"]),
+            let y = number(bounds["Y"]),
+            let width = number(bounds["Width"]),
+            let height = number(bounds["Height"])
+        else {
+            continue
+        }
+        let layer = integer(window[kCGWindowLayer as String]) ?? -1
+        let isNamedMascot = name.contains("Pet Mascot")
+        let isPermissionlessMascot = name.isEmpty
+            && layer == 2
+            && (80...400).contains(width)
+            && (80...400).contains(height)
+        guard (owner == "Codex" || owner == "ChatGPT"), isNamedMascot || isPermissionlessMascot else {
+            continue
+        }
+        return PetAnchor(x: x, y: y, width: width, height: height)
+    }
+    return nil
+}
+
+func runSelfTests() -> Bool {
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+    let futureReset = 1_700_100_000
+
+    guard parseISO8601("2026-07-18T05:22:53.732Z") != nil,
+          parseISO8601("2026-07-18T05:22:53Z") != nil else {
+        print("FAIL: ISO-8601 timestamp variants regressed")
+        return false
+    }
+
+    let weeklyOnly = parseLocalSnapshot([
+        "primary": ["used_percent": 100, "window_minutes": 10_080, "resets_at": futureReset]
+    ], now: now)
+    guard weeklyOnly?.fiveHour == nil, weeklyOnly?.weekly?.remainingPercent == 0 else {
+        print("FAIL: weekly-only data was duplicated into the five-hour window")
+        return false
+    }
+
+    let reversedWindows = parseLocalSnapshot([
+        "primary": ["used_percent": 25, "window_minutes": 10_080, "resets_at": futureReset],
+        "secondary": ["used_percent": 10, "window_minutes": 300, "resets_at": futureReset]
+    ], now: now)
+    guard reversedWindows?.fiveHour?.remainingPercent == 90,
+          reversedWindows?.weekly?.remainingPercent == 75 else {
+        print("FAIL: windows were mapped by field order instead of duration")
+        return false
+    }
+
+    let legacyWindows = parseLocalSnapshot([
+        "primary": ["used_percent": 20, "resets_at": futureReset],
+        "secondary": ["used_percent": 30, "resets_at": futureReset]
+    ], now: now)
+    guard legacyWindows?.fiveHour?.remainingPercent == 80,
+          legacyWindows?.weekly?.remainingPercent == 70 else {
+        print("FAIL: legacy primary/secondary mapping regressed")
+        return false
+    }
+
+    let permissionlessPetWindow: [String: Any] = [
+        kCGWindowOwnerName as String: "ChatGPT",
+        kCGWindowName as String: "",
+        kCGWindowLayer as String: 2,
+        kCGWindowBounds as String: ["X": 119, "Y": 688, "Width": 198, "Height": 206]
+    ]
+    guard let anchor = petWindowAnchor(in: [permissionlessPetWindow]),
+          anchor.x == 119, anchor.y == 688, anchor.width == 198, anchor.height == 206 else {
+        print("FAIL: permissionless pet-window detection regressed")
+        return false
+    }
+
+    let shifted = shiftedPetAnchor(
+        sample: PetAnchorSample(
+            anchor: PetAnchor(x: 119, y: 688, width: 198, height: 206),
+            overlayX: 172,
+            overlayY: 741,
+            capturedAt: now
+        ),
+        overlayX: 192,
+        overlayY: 751
+    )
+    guard shifted.x == 139, shifted.y == 698 else {
+        print("FAIL: cached pet-anchor movement regressed")
+        return false
+    }
+
+    let primaryPanel = panelFrame(
+        for: PetAnchor(x: 119, y: 688, width: 198, height: 206),
+        screen: CGRect(x: 0, y: 0, width: 1470, height: 956),
+        primaryTop: 956
+    )
+    let secondaryPanel = panelFrame(
+        for: PetAnchor(x: 1600, y: 100, width: 100, height: 100),
+        screen: CGRect(x: 1470, y: 0, width: 1920, height: 1080),
+        primaryTop: 956
+    )
+    guard primaryPanel.origin == CGPoint(x: 143, y: 9),
+          secondaryPanel.origin == CGPoint(x: 1575, y: 703) else {
+        print("FAIL: multi-display panel placement regressed")
+        return false
+    }
+
+    print("PASS: usage parsing, pet detection, and panel placement")
+    return true
+}
+
+if CommandLine.arguments.contains("--self-test") {
+    exit(runSelfTests() ? EXIT_SUCCESS : EXIT_FAILURE)
+}
+
+if CommandLine.arguments.contains("--print-pet-state") {
+    let state = readPetState()
+    if let anchor = state.anchor {
+        print("open=\(state.isOpen) x=\(Int(anchor.x)) y=\(Int(anchor.y)) width=\(Int(anchor.width)) height=\(Int(anchor.height))")
+    } else {
+        print("open=\(state.isOpen) anchor=unavailable")
+    }
+    exit(state.isOpen && state.anchor != nil ? EXIT_SUCCESS : EXIT_FAILURE)
+}
+
+if CommandLine.arguments.contains("--print-codex-state") {
+    let matches = NSWorkspace.shared.runningApplications.filter(isCodexApplication)
+    if matches.isEmpty {
+        print("running=false")
+        exit(EXIT_FAILURE)
+    }
+    for app in matches {
+        print("running=true name=\(app.localizedName ?? "unknown") bundle=\(app.bundleIdentifier ?? "unknown")")
+    }
+    exit(EXIT_SUCCESS)
 }
 
 if let previewIndex = CommandLine.arguments.firstIndex(of: "--render-preview"),

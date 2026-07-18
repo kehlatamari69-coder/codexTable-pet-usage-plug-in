@@ -6,13 +6,21 @@ APP="$DIR/CodexPetLimits.app"
 MACOS="$APP/Contents/MacOS"
 RESOURCES="$APP/Contents/Resources"
 ICON_SOURCE="$DIR/assets/CodexPetLimits.icns"
+BUILD_CACHE="$(mktemp -d "${TMPDIR:-/tmp}/codex-pet-limits-build.XXXXXX")"
+trap 'rm -rf "$BUILD_CACHE"' EXIT
 
 rm -rf "$APP"
 mkdir -p "$MACOS" "$RESOURCES"
 
 [[ -f "$ICON_SOURCE" ]] && cp "$ICON_SOURCE" "$RESOURCES/CodexPetLimits.icns"
 
-swiftc "$DIR/CodexPetLimitOverlay.swift" -o "$MACOS/CodexPetLimits"
+SWIFT_ARGS=(-module-cache-path "$BUILD_CACHE/module-cache")
+COMPATIBLE_SDK="/Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk"
+if [[ -d "$COMPATIBLE_SDK" ]]; then
+  SWIFT_ARGS+=(-sdk "$COMPATIBLE_SDK" -target "$(uname -m)-apple-macosx13.0")
+fi
+
+swiftc "${SWIFT_ARGS[@]}" "$DIR/CodexPetLimitOverlay.swift" -o "$MACOS/CodexPetLimits"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
@@ -30,9 +38,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.1</string>
+  <string>1.3</string>
   <key>CFBundleVersion</key>
-  <string>2</string>
+  <string>6</string>
   <key>LSUIElement</key>
   <true/>
 </dict>
