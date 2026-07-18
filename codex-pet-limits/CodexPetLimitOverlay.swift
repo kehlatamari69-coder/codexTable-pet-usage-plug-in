@@ -248,7 +248,13 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        updateCodexLifecycle()
+        startActiveTimers()
+        refreshPosition()
+        if isCodexDesktopRunning() {
+            stopCodexWaitTimer()
+        } else {
+            startCodexWaitTimer()
+        }
     }
 
     @objc private func workspaceApplicationChanged(_ notification: Notification) {
@@ -340,8 +346,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
         rateLimitClient.refreshIfNeeded(force: force) { [weak self] limits in
             DispatchQueue.main.async {
                 guard let self,
-                      generation == self.stateGeneration,
-                      self.panel.isVisible else { return }
+                      generation == self.stateGeneration else { return }
                 if let limits {
                     self.overlay.snapshot = limits
                     self.overlay.needsDisplay = true
