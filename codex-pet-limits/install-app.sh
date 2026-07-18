@@ -41,12 +41,14 @@ cat > "$PLIST" <<PLIST
   <string>com.yy.codex-pet-limits</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/open</string>
-    <string>-gja</string>
-    <string>$TARGET_APP</string>
+    <string>$TARGET_APP/Contents/MacOS/CodexPetLimits</string>
   </array>
   <key>RunAtLoad</key>
   <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
   <key>StandardOutPath</key>
   <string>/dev/null</string>
   <key>StandardErrorPath</key>

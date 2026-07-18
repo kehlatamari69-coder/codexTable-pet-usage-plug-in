@@ -336,6 +336,7 @@ final class LimitOverlayApp: NSObject, NSApplicationDelegate {
 
         movePanel(to: anchor)
         if !panel.isVisible {
+            NSApp.unhideWithoutActivation()
             panel.orderFrontRegardless()
             refreshLimits(force: true)
         }
