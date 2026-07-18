@@ -40,7 +40,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key>
   <string>1.3</string>
   <key>CFBundleVersion</key>
-  <string>6</string>
+  <string>7</string>
   <key>LSUIElement</key>
   <true/>
 </dict>

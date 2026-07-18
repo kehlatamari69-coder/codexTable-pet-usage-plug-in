@@ -1,5 +1,4 @@
 import AppKit
-import CoreGraphics
 import Foundation
 
 struct RateWindow {
@@ -28,15 +27,6 @@ struct PetState {
     let isOpen: Bool
     let anchor: PetAnchor?
 }
-
-struct PetAnchorSample {
-    let anchor: PetAnchor
-    let overlayX: Double
-    let overlayY: Double
-    let capturedAt: Date
-}
-
-private var petAnchorSample: PetAnchorSample?
 
 final class OverlayView: NSView {
     var snapshot: LimitSnapshot?
@@ -616,7 +606,6 @@ func readPetState() -> PetState {
         false
 
     guard isOpen else {
-        petAnchorSample = nil
         return PetState(isOpen: false, anchor: nil)
     }
 
@@ -644,73 +633,14 @@ func readPetState() -> PetState {
         return PetState(isOpen: true, anchor: anchor)
     }
 
-    return PetState(
-        isOpen: true,
-        anchor: trackedPetWindowAnchor(overlayX: overlayX, overlayY: overlayY, now: Date())
-    )
+    // Current Codex stores the mascot's logical origin without the 53-point
+    // transparent effect padding used by its 198x206 composition window.
+    let anchor = inferredPetAnchor(overlayX: overlayX, overlayY: overlayY)
+    return PetState(isOpen: true, anchor: anchor)
 }
 
-func trackedPetWindowAnchor(overlayX: Double, overlayY: Double, now: Date) -> PetAnchor? {
-    if let sample = petAnchorSample, now.timeIntervalSince(sample.capturedAt) < 30 {
-        return shiftedPetAnchor(sample: sample, overlayX: overlayX, overlayY: overlayY)
-    }
-
-    if let anchor = visiblePetWindowAnchor() {
-        petAnchorSample = PetAnchorSample(
-            anchor: anchor,
-            overlayX: overlayX,
-            overlayY: overlayY,
-            capturedAt: now
-        )
-        return anchor
-    }
-
-    petAnchorSample = nil
-    return nil
-}
-
-func shiftedPetAnchor(sample: PetAnchorSample, overlayX: Double, overlayY: Double) -> PetAnchor {
-    PetAnchor(
-        x: sample.anchor.x + CGFloat(overlayX - sample.overlayX),
-        y: sample.anchor.y + CGFloat(overlayY - sample.overlayY),
-        width: sample.anchor.width,
-        height: sample.anchor.height
-    )
-}
-
-func visiblePetWindowAnchor() -> PetAnchor? {
-    guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
-        return nil
-    }
-
-    return petWindowAnchor(in: windows)
-}
-
-func petWindowAnchor(in windows: [[String: Any]]) -> PetAnchor? {
-    for window in windows {
-        let owner = window[kCGWindowOwnerName as String] as? String ?? ""
-        let name = window[kCGWindowName as String] as? String ?? ""
-        guard
-            let bounds = window[kCGWindowBounds as String] as? [String: Any],
-            let x = number(bounds["X"]),
-            let y = number(bounds["Y"]),
-            let width = number(bounds["Width"]),
-            let height = number(bounds["Height"])
-        else {
-            continue
-        }
-        let layer = integer(window[kCGWindowLayer as String]) ?? -1
-        let isNamedMascot = name.contains("Pet Mascot")
-        let isPermissionlessMascot = name.isEmpty
-            && layer == 2
-            && (80...400).contains(width)
-            && (80...400).contains(height)
-        guard (owner == "Codex" || owner == "ChatGPT"), isNamedMascot || isPermissionlessMascot else {
-            continue
-        }
-        return PetAnchor(x: x, y: y, width: width, height: height)
-    }
-    return nil
+func inferredPetAnchor(overlayX: Double, overlayY: Double) -> PetAnchor {
+    PetAnchor(x: CGFloat(overlayX - 53), y: CGFloat(overlayY - 53), width: 198, height: 206)
 }
 
 func runSelfTests() -> Bool {
@@ -720,6 +650,13 @@ func runSelfTests() -> Bool {
     guard parseISO8601("2026-07-18T05:22:53.732Z") != nil,
           parseISO8601("2026-07-18T05:22:53Z") != nil else {
         print("FAIL: ISO-8601 timestamp variants regressed")
+        return false
+    }
+
+    let inferredAnchor = inferredPetAnchor(overlayX: 172, overlayY: 741)
+    guard inferredAnchor.x == 119, inferredAnchor.y == 688,
+          inferredAnchor.width == 198, inferredAnchor.height == 206 else {
+        print("FAIL: current Codex pet-anchor inference regressed")
         return false
     }
 
@@ -748,33 +685,6 @@ func runSelfTests() -> Bool {
     guard legacyWindows?.fiveHour?.remainingPercent == 80,
           legacyWindows?.weekly?.remainingPercent == 70 else {
         print("FAIL: legacy primary/secondary mapping regressed")
-        return false
-    }
-
-    let permissionlessPetWindow: [String: Any] = [
-        kCGWindowOwnerName as String: "ChatGPT",
-        kCGWindowName as String: "",
-        kCGWindowLayer as String: 2,
-        kCGWindowBounds as String: ["X": 119, "Y": 688, "Width": 198, "Height": 206]
-    ]
-    guard let anchor = petWindowAnchor(in: [permissionlessPetWindow]),
-          anchor.x == 119, anchor.y == 688, anchor.width == 198, anchor.height == 206 else {
-        print("FAIL: permissionless pet-window detection regressed")
-        return false
-    }
-
-    let shifted = shiftedPetAnchor(
-        sample: PetAnchorSample(
-            anchor: PetAnchor(x: 119, y: 688, width: 198, height: 206),
-            overlayX: 172,
-            overlayY: 741,
-            capturedAt: now
-        ),
-        overlayX: 192,
-        overlayY: 751
-    )
-    guard shifted.x == 139, shifted.y == 698 else {
-        print("FAIL: cached pet-anchor movement regressed")
         return false
     }
 
